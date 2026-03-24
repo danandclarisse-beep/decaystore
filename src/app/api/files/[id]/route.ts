@@ -69,26 +69,21 @@ export async function DELETE(_req: Request, { params }: Params) {
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
     if (file.status === "deleted") return NextResponse.json({ success: true })
 
-    // Delete from R2 first — if this fails, we don't mark it deleted in DB
-    // so the user can retry. Token now has correct permissions so this should
-    // always succeed.
+    // Delete from R2 first — if this fails we bail before touching the DB
+    // so the user can safely retry
     await deleteFromR2(file.r2Key)
 
-    // Mark as deleted + atomically decrement storage usage in one transaction
-    await db.transaction(async (tx) => {
-      await tx
-        .update(files)
-        .set({ status: "deleted", deletedAt: new Date() })
-        .where(eq(files.id, file.id))
+    // Mark as deleted in DB
+    await db
+      .update(files)
+      .set({ status: "deleted", deletedAt: new Date() })
+      .where(eq(files.id, file.id))
 
-      // Atomic decrement — safe under concurrent deletes
-      await tx
-        .update(users)
-        .set({
-          storageUsedBytes: sql`GREATEST(0, storage_used_bytes - ${file.sizeBytes})`,
-        })
-        .where(eq(users.id, user.id))
-    })
+    // Atomic decrement — safe under concurrent deletes, floors at 0
+    await db
+      .update(users)
+      .set({ storageUsedBytes: sql`GREATEST(0, storage_used_bytes - ${file.sizeBytes})` })
+      .where(eq(users.id, user.id))
 
     return NextResponse.json({ success: true })
   } catch (err) {
