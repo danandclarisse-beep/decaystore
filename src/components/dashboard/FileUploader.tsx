@@ -20,69 +20,81 @@ interface UploadState {
 export function FileUploader({ onUploadComplete, plan }: Props) {
   const [uploads, setUploads] = useState<UploadState[]>([])
 
-  const uploadFile = useCallback(async (file: File) => {
-    setUploads((prev) => [
-      ...prev,
-      { file, status: "uploading", progress: 0 },
-    ])
-
-    try {
-      // Step 1: Ask our API for a presigned URL (just metadata, no file bytes)
-      const res = await fetch("/api/files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? "Upload failed")
-      }
-
-      const { uploadUrl } = await res.json()
-
-      // Step 2: PUT the file directly to R2 using the presigned URL (no size limit)
-      const r2Res = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      })
-
-      if (!r2Res.ok) {
-        throw new Error(`R2 upload failed: ${r2Res.status} ${r2Res.statusText}`)
-      }
-
+  const updateUpload = useCallback(
+    (file: File, patch: Partial<UploadState>) => {
       setUploads((prev) =>
         prev.map((u) =>
           u.file.name === file.name && u.file.size === file.size
-            ? { ...u, status: "done", progress: 100 }
+            ? { ...u, ...patch }
             : u
         )
       )
+    },
+    []
+  )
 
-      onUploadComplete()
+  const uploadFile = useCallback(
+    async (file: File) => {
+      setUploads((prev) => [...prev, { file, status: "uploading", progress: 0 }])
 
-      setTimeout(() => {
-        setUploads((prev) =>
-          prev.filter(
-            (u) => !(u.file.name === file.name && u.file.size === file.size && u.status === "done")
+      try {
+        // ── Step 1: Ask our API for a presigned URL ──
+        // Only metadata is sent — no file bytes touch Vercel, so there's no
+        // 4.5 MB serverless body limit. Files of any size are supported.
+        const metaRes = await fetch("/api/files", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+          }),
+        })
+
+        if (!metaRes.ok) {
+          const err = await metaRes.json()
+          throw new Error(err.error ?? "Upload failed")
+        }
+
+        const { uploadUrl } = await metaRes.json()
+
+        // ── Step 2: PUT file directly to R2 via presigned URL ──
+        // Browser → R2 directly. Cloudflare handles the bytes, not Vercel.
+        const r2Res = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        })
+
+        if (!r2Res.ok) {
+          throw new Error(`Upload to storage failed (${r2Res.status})`)
+        }
+
+        updateUpload(file, { status: "done", progress: 100 })
+        onUploadComplete()
+
+        // Auto-clear after 3s
+        setTimeout(() => {
+          setUploads((prev) =>
+            prev.filter(
+              (u) =>
+                !(
+                  u.file.name === file.name &&
+                  u.file.size === file.size &&
+                  u.status === "done"
+                )
+            )
           )
-        )
-      }, 3000)
-    } catch (err) {
-      setUploads((prev) =>
-        prev.map((u) =>
-          u.file.name === file.name && u.file.size === file.size
-            ? { ...u, status: "error", error: err instanceof Error ? err.message : "Upload failed" }
-            : u
-        )
-      )
-    }
-  }, [onUploadComplete])
+        }, 3000)
+      } catch (err) {
+        updateUpload(file, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Upload failed",
+        })
+      }
+    },
+    [onUploadComplete, updateUpload]
+  )
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -93,7 +105,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    maxSize: 5 * 1024 * 1024 * 1024, // 5GB
+    maxSize: 5 * 1024 * 1024 * 1024, // 5 GB
   })
 
   return (
@@ -111,9 +123,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
         <p className="text-sm text-gray-600 font-medium">
           {isDragActive ? "Drop to upload" : "Drop files here or click to browse"}
         </p>
-        <p className="text-xs text-gray-400 mt-1">
-          Any file type · Up to 5 GB per file
-        </p>
+        <p className="text-xs text-gray-400 mt-1">Any file type · Up to 5 GB per file</p>
       </div>
 
       {uploads.length > 0 && (
@@ -136,7 +146,9 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
                   <p className="text-xs text-red-500">{u.error}</p>
                 )}
               </div>
-              <span className="text-xs text-gray-400 shrink-0">{formatBytes(u.file.size)}</span>
+              <span className="text-xs text-gray-400 shrink-0">
+                {formatBytes(u.file.size)}
+              </span>
             </div>
           ))}
         </div>

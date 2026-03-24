@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { files, users } from "@/lib/db/schema"
-import { eq, and } from "drizzle-orm"
+import { eq, and, sql } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 import { getPresignedDownloadUrl, deleteFromR2 } from "@/lib/r2"
 import { renewFile } from "@/lib/decay"
@@ -21,9 +21,10 @@ export async function GET(_req: Request, { params }: Params) {
     })
 
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
-    if (file.status === "deleted") return NextResponse.json({ error: "File has been deleted" }, { status: 410 })
+    if (file.status === "deleted")
+      return NextResponse.json({ error: "File has been deleted" }, { status: 410 })
 
-    // Update last accessed timestamp (resets decay slightly)
+    // Update last accessed timestamp (resets decay)
     await db
       .update(files)
       .set({ lastAccessedAt: new Date() })
@@ -68,20 +69,26 @@ export async function DELETE(_req: Request, { params }: Params) {
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
     if (file.status === "deleted") return NextResponse.json({ success: true })
 
-    // Delete from R2 — fatal if it fails (ensures no orphaned objects)
+    // Delete from R2 first — if this fails, we don't mark it deleted in DB
+    // so the user can retry. Token now has correct permissions so this should
+    // always succeed.
     await deleteFromR2(file.r2Key)
 
-    // Mark as deleted in DB
-    await db
-      .update(files)
-      .set({ status: "deleted", deletedAt: new Date() })
-      .where(eq(files.id, file.id))
+    // Mark as deleted + atomically decrement storage usage in one transaction
+    await db.transaction(async (tx) => {
+      await tx
+        .update(files)
+        .set({ status: "deleted", deletedAt: new Date() })
+        .where(eq(files.id, file.id))
 
-    // Update storage usage
-    await db
-      .update(users)
-      .set({ storageUsedBytes: Math.max(0, user.storageUsedBytes - file.sizeBytes) })
-      .where(eq(users.id, user.id))
+      // Atomic decrement — safe under concurrent deletes
+      await tx
+        .update(users)
+        .set({
+          storageUsedBytes: sql`GREATEST(0, storage_used_bytes - ${file.sizeBytes})`,
+        })
+        .where(eq(users.id, user.id))
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {
