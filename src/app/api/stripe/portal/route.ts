@@ -6,7 +6,7 @@ import { createPortalSession } from "@/lib/stripe"
 // POST /api/stripe/portal — opens LemonSqueezy customer portal
 export async function POST() {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()

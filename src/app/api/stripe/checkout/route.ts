@@ -11,7 +11,7 @@ const checkoutSchema = z.object({
 // POST /api/stripe/checkout — creates a LemonSqueezy checkout URL
 export async function POST(request: Request) {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()

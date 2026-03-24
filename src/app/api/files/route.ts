@@ -12,7 +12,7 @@ import { z } from "zod"
 // ─── GET /api/files — list user's files ───────────────────
 export async function GET() {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
@@ -39,7 +39,7 @@ const uploadSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()

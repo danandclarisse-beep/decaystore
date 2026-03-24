@@ -8,7 +8,7 @@ import {
   ClockIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, getMimeTypeIcon, cn } from "@/lib/utils"
-import { getDecayColor, getDecayLabel, getDaysUntilDeletion } from "@/lib/decay"
+import { getDecayColor, getDecayLabel, getDaysUntilDeletion } from "@/lib/decay-utils"
 import type { File } from "@/lib/db/schema"
 
 interface Props {

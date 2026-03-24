@@ -12,7 +12,7 @@ type Params = { params: { id: string } }
 // ─── GET /api/files/[id] — get download URL ───────────────
 export async function GET(_req: Request, { params }: Params) {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: Params) {
 // ─── PATCH /api/files/[id] — renew file ───────────────────
 export async function PATCH(_req: Request, { params }: Params) {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
@@ -57,7 +57,7 @@ export async function PATCH(_req: Request, { params }: Params) {
 // ─── DELETE /api/files/[id] — manual delete ───────────────
 export async function DELETE(_req: Request, { params }: Params) {
   try {
-    const { userId: clerkId } = auth()
+    const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()

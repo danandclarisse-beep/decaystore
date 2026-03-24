@@ -7,7 +7,7 @@ import { PLAN_DECAY_RATES } from "@/lib/decay"
 import type { User } from "@/lib/db/schema"
 
 export async function getOrCreateUser(): Promise<User> {
-  const { userId: clerkId } = auth()
+  const { userId: clerkId } = await auth()
   if (!clerkId) throw new Error("Unauthorized")
 
   // Check if user exists
