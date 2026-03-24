@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
-import { PLANS } from "@/lib/stripe"
+import { PLANS } from "@/lib/plans"
 import { CheckIcon } from "lucide-react"
 
 export default function PricingPage() {

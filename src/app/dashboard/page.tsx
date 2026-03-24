@@ -6,7 +6,7 @@ import { FileUploader } from "@/components/dashboard/FileUploader"
 import { FileGrid } from "@/components/dashboard/FileGrid"
 import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
-import { PLAN_STORAGE_LIMITS } from "@/lib/stripe"
+import { PLAN_STORAGE_LIMITS } from "@/lib/plans"
 import type { File, User } from "@/lib/db/schema"
 
 export default function DashboardPage() {
