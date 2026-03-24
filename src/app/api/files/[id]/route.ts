@@ -68,21 +68,8 @@ export async function DELETE(_req: Request, { params }: Params) {
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
     if (file.status === "deleted") return NextResponse.json({ success: true })
 
-    // Delete from R2 — treat AccessDenied as non-fatal so the DB record is
-    // always cleaned up even if the R2 token lacks the delete permission.
-    try {
-      await deleteFromR2(file.r2Key)
-    } catch (r2Err: unknown) {
-      const code = (r2Err as { Code?: string })?.Code ?? (r2Err as { name?: string })?.name
-      if (code === "AccessDenied" || code === "403") {
-        // Log so it is visible in Vercel logs, but don't block the DB cleanup.
-        // Fix: grant your R2 API token the "Object Delete" permission in the
-        // Cloudflare dashboard (R2 → Manage API tokens → Edit token).
-        console.error("[DELETE /api/files/[id]] R2 AccessDenied — check token permissions:", r2Err)
-      } else {
-        throw r2Err
-      }
-    }
+    // Delete from R2 — fatal if it fails (ensures no orphaned objects)
+    await deleteFromR2(file.r2Key)
 
     // Mark as deleted in DB
     await db
