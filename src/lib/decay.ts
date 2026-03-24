@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { files, decayEvents, users } from "@/lib/db/schema"
-import { eq, lt, and, ne } from "drizzle-orm"
+import { eq, ne, and } from "drizzle-orm"
 import { deleteFromR2 } from "@/lib/r2"
 import { sendDecayWarningEmail, sendDecayDeletedEmail } from "@/lib/email"
 
@@ -70,10 +70,9 @@ export async function runDecayCycle(): Promise<{
 }> {
   const stats = { processed: 0, warned: 0, critical: 0, deleted: 0, errors: [] as string[] }
 
-  // Fetch all active/warned/compressed files
+  // Fetch all active/warned/compressed files (no relation join to avoid type issues)
   const activeFiles = await db.query.files.findMany({
     where: ne(files.status, "deleted"),
-    with: { user: true },
   })
 
   for (const file of activeFiles) {
@@ -118,31 +117,44 @@ export async function runDecayCycle(): Promise<{
         // Handle deletion
         if (newStatus === "deleted") {
           await deleteFromR2(file.r2Key)
+
+          // Fetch user explicitly (avoids 'never' type from relation join)
+          const fileUser = await db.query.users.findFirst({
+            where: eq(users.id, file.userId),
+          })
+
           // Update user storage count
           await db
             .update(users)
             .set({
               storageUsedBytes: Math.max(
                 0,
-                ((await db.query.users.findFirst({ where: eq(users.id, file.userId) }))?.storageUsedBytes ?? 0) - file.sizeBytes
+                (fileUser?.storageUsedBytes ?? 0) - file.sizeBytes
               ),
             })
             .where(eq(users.id, file.userId))
 
-          await sendDecayDeletedEmail(file.user.email, file.originalFilename)
+          await sendDecayDeletedEmail(fileUser?.email ?? "", file.originalFilename)
           stats.deleted++
         }
 
-        // Send warning emails
+        // Send warning email
         if (newStatus === "warned" && oldStatus === "active") {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
-          await sendDecayWarningEmail(file.user.email, file.originalFilename, daysLeft, "warning")
+          const fileUser = await db.query.users.findFirst({
+            where: eq(users.id, file.userId),
+          })
+          await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "warning")
           stats.warned++
         }
 
+        // Send critical warning email
         if (newStatus === "critical" && oldStatus !== "critical") {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
-          await sendDecayWarningEmail(file.user.email, file.originalFilename, daysLeft, "critical")
+          const fileUser = await db.query.users.findFirst({
+            where: eq(users.id, file.userId),
+          })
+          await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "critical")
           stats.critical++
         }
       }
