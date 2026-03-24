@@ -47,11 +47,13 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
 
       const { presignedUrl } = await metaRes.json()
 
-      // Step 2: Upload directly to R2 using the presigned URL
+      // Step 2: Upload directly to R2 using the presigned URL.
+      // Do NOT add extra headers here — the presigned URL already encodes
+      // the expected headers. Adding Content-Type separately causes a
+      // SignatureDoesNotMatch error if it wasn't included in the signed headers.
       const uploadRes = await fetch(presignedUrl, {
         method: "PUT",
         body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
       })
 
       if (!uploadRes.ok) throw new Error("R2 upload failed")

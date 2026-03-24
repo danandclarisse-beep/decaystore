@@ -14,6 +14,11 @@ export const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID!,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
+  // Disable automatic checksum injection — R2 does not support
+  // x-amz-checksum-* headers in presigned URLs and they cause CORS
+  // preflight failures when the browser uploads directly to R2.
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 })
 
 const BUCKET = process.env.R2_BUCKET_NAME!
