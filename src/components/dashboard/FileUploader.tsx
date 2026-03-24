@@ -27,21 +27,33 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
     ])
 
     try {
-      // Send file directly to our API — server streams it to R2.
-      // This avoids all browser→R2 CORS issues with presigned URLs.
-      const formData = new FormData()
-      formData.append("file", file)
-
+      // Step 1: Ask our API for a presigned URL (just metadata, no file bytes)
       const res = await fetch("/api/files", {
         method: "POST",
-        body: formData,
-        // Do NOT set Content-Type — browser sets it automatically with
-        // the correct multipart boundary when body is FormData.
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+        }),
       })
 
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error ?? "Upload failed")
+      }
+
+      const { uploadUrl } = await res.json()
+
+      // Step 2: PUT the file directly to R2 using the presigned URL (no size limit)
+      const r2Res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      })
+
+      if (!r2Res.ok) {
+        throw new Error(`R2 upload failed: ${r2Res.status} ${r2Res.statusText}`)
       }
 
       setUploads((prev) =>

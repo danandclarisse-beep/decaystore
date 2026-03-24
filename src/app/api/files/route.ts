@@ -7,7 +7,7 @@ import { db } from "@/lib/db"
 import { files, users } from "@/lib/db/schema"
 import { eq, and, ne, desc } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
-import { uploadToR2, buildR2Key } from "@/lib/r2"
+import { getPresignedUploadUrl, buildR2Key } from "@/lib/r2"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/stripe"
 import { PLAN_DECAY_RATES } from "@/lib/decay"
 
@@ -31,7 +31,7 @@ export async function GET() {
   }
 }
 
-// ─── POST /api/files — upload file via server (no browser→R2 CORS needed) ───
+// ─── POST /api/files — get a presigned upload URL (browser uploads directly to R2) ───
 export async function POST(request: Request) {
   try {
     const { userId: clerkId } = await auth()
@@ -39,19 +39,11 @@ export async function POST(request: Request) {
 
     const user = await getOrCreateUser()
 
-    // Parse multipart form — file comes as FormData, not JSON
-    const formData = await request.formData()
-    const file = formData.get("file") as File | null
-    const description = (formData.get("description") as string) ?? undefined
+    const { filename, contentType, sizeBytes, description } = await request.json()
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+    if (!filename || !contentType || !sizeBytes) {
+      return NextResponse.json({ error: "Missing filename, contentType, or sizeBytes" }, { status: 400 })
     }
-
-    const filename = file.name
-    const contentType = file.type || "application/octet-stream"
-    const sizeBytes = file.size
-
     if (filename.length > 255) {
       return NextResponse.json({ error: "Filename too long" }, { status: 400 })
     }
@@ -80,12 +72,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // Upload directly from server → R2 (no browser CORS involved)
+    // Generate presigned URL — browser will PUT directly to R2 (no size limit)
     const r2Key = buildR2Key(user.id, filename)
-    const buffer = Buffer.from(await file.arrayBuffer())
-    await uploadToR2(r2Key, buffer, contentType)
+    const uploadUrl = await getPresignedUploadUrl(r2Key, contentType)
 
-    // Create file record in DB
+    // Create file record in DB immediately (status: "active")
     const decayRateDays = PLAN_DECAY_RATES[user.plan]
     const [newFile] = await db
       .insert(files)
@@ -109,7 +100,8 @@ export async function POST(request: Request) {
       .set({ storageUsedBytes: user.storageUsedBytes + sizeBytes })
       .where(eq(users.id, user.id))
 
-    return NextResponse.json({ file: newFile })
+    // Return presigned URL + file record so client can upload then refresh
+    return NextResponse.json({ uploadUrl, file: newFile })
   } catch (err) {
     console.error("[POST /api/files]", err)
     return NextResponse.json({ error: "Upload failed" }, { status: 500 })
