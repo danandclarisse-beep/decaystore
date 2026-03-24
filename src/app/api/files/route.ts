@@ -1,13 +1,15 @@
+// Allow large file uploads — override Next.js default 4MB body limit
+export const maxDuration = 60
+export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { files, users } from "@/lib/db/schema"
 import { eq, and, ne, desc } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
-import { getPresignedUploadUrl, buildR2Key } from "@/lib/r2"
+import { uploadToR2, buildR2Key } from "@/lib/r2"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/stripe"
 import { PLAN_DECAY_RATES } from "@/lib/decay"
-import { z } from "zod"
 
 // ─── GET /api/files — list user's files ───────────────────
 export async function GET() {
@@ -29,28 +31,33 @@ export async function GET() {
   }
 }
 
-// ─── POST /api/files — request presigned upload URL ───────
-const uploadSchema = z.object({
-  filename: z.string().min(1).max(255),
-  contentType: z.string().min(1),
-  sizeBytes: z.number().positive().max(5 * 1024 * 1024 * 1024), // 5GB max per file
-  description: z.string().max(500).optional(),
-})
-
+// ─── POST /api/files — upload file via server (no browser→R2 CORS needed) ───
 export async function POST(request: Request) {
   try {
     const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
-    const body = await request.json()
-    const parsed = uploadSchema.safeParse(body)
 
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400 })
+    // Parse multipart form — file comes as FormData, not JSON
+    const formData = await request.formData()
+    const file = formData.get("file") as File | null
+    const description = (formData.get("description") as string) ?? undefined
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    const { filename, contentType, sizeBytes, description } = parsed.data
+    const filename = file.name
+    const contentType = file.type || "application/octet-stream"
+    const sizeBytes = file.size
+
+    if (filename.length > 255) {
+      return NextResponse.json({ error: "Filename too long" }, { status: 400 })
+    }
+    if (sizeBytes > 5 * 1024 * 1024 * 1024) {
+      return NextResponse.json({ error: "File exceeds 5 GB limit" }, { status: 400 })
+    }
 
     // Check storage limit
     const storageLimit = PLAN_STORAGE_LIMITS[user.plan]
@@ -73,11 +80,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // Build R2 key and get presigned URL
+    // Upload directly from server → R2 (no browser CORS involved)
     const r2Key = buildR2Key(user.id, filename)
-    const presignedUrl = await getPresignedUploadUrl(r2Key, contentType)
+    const buffer = Buffer.from(await file.arrayBuffer())
+    await uploadToR2(r2Key, buffer, contentType)
 
-    // Create file record in DB (status pending until confirmed)
+    // Create file record in DB
     const decayRateDays = PLAN_DECAY_RATES[user.plan]
     const [newFile] = await db
       .insert(files)
@@ -101,7 +109,7 @@ export async function POST(request: Request) {
       .set({ storageUsedBytes: user.storageUsedBytes + sizeBytes })
       .where(eq(users.id, user.id))
 
-    return NextResponse.json({ presignedUrl, file: newFile })
+    return NextResponse.json({ file: newFile })
   } catch (err) {
     console.error("[POST /api/files]", err)
     return NextResponse.json({ error: "Upload failed" }, { status: 500 })

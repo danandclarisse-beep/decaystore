@@ -21,42 +21,28 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
   const [uploads, setUploads] = useState<UploadState[]>([])
 
   const uploadFile = useCallback(async (file: File) => {
-    const id = file.name + file.size
-
     setUploads((prev) => [
       ...prev,
       { file, status: "uploading", progress: 0 },
     ])
 
     try {
-      // Step 1: Request presigned URL from our API
-      const metaRes = await fetch("/api/files", {
+      // Send file directly to our API — server streams it to R2.
+      // This avoids all browser→R2 CORS issues with presigned URLs.
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const res = await fetch("/api/files", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-        }),
+        body: formData,
+        // Do NOT set Content-Type — browser sets it automatically with
+        // the correct multipart boundary when body is FormData.
       })
 
-      if (!metaRes.ok) {
-        const err = await metaRes.json()
+      if (!res.ok) {
+        const err = await res.json()
         throw new Error(err.error ?? "Upload failed")
       }
-
-      const { presignedUrl } = await metaRes.json()
-
-      // Step 2: Upload directly to R2 using the presigned URL.
-      // Do NOT add extra headers here — the presigned URL already encodes
-      // the expected headers. Adding Content-Type separately causes a
-      // SignatureDoesNotMatch error if it wasn't included in the signed headers.
-      const uploadRes = await fetch(presignedUrl, {
-        method: "PUT",
-        body: file,
-      })
-
-      if (!uploadRes.ok) throw new Error("R2 upload failed")
 
       setUploads((prev) =>
         prev.map((u) =>
@@ -68,7 +54,6 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
 
       onUploadComplete()
 
-      // Clear done uploads after 3 seconds
       setTimeout(() => {
         setUploads((prev) =>
           prev.filter(
@@ -119,7 +104,6 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
         </p>
       </div>
 
-      {/* Upload progress list */}
       {uploads.length > 0 && (
         <div className="space-y-2">
           {uploads.map((u, i) => (

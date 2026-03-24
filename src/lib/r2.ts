@@ -46,6 +46,18 @@ export async function getPresignedDownloadUrl(key: string, expiresIn = 3600) {
   return getSignedUrl(r2, command, { expiresIn })
 }
 
+// Upload a file buffer directly from the server (no browser CORS needed)
+export async function uploadToR2(key: string, body: Buffer, contentType: string) {
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    })
+  )
+}
+
 // Delete a file from R2
 export async function deleteFromR2(key: string) {
   await r2.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
