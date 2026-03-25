@@ -23,21 +23,42 @@ export function DashboardHeader({ user }: Props) {
     }
   }
 
-  const planBadgeColor = {
-    free: "bg-gray-100 text-gray-600",
-    starter: "bg-blue-50 text-blue-700",
-    pro: "bg-purple-50 text-purple-700",
+  const planBadge = {
+    free:    { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
+    starter: { bg: "rgba(59,130,246,0.12)",  color: "#60a5fa" },
+    pro:     { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)" },
   }[user?.plan ?? "free"]
 
   return (
-    <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+    <header
+      style={{
+        background: "rgba(10,10,11,0.9)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid var(--border-subtle)",
+      }}
+      className="sticky top-0 z-10"
+    >
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-semibold text-lg tracking-tight text-gray-900">
-            DecayStore
+          <Link href="/" className="flex items-center gap-2.5">
+            <span
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+              style={{ background: "var(--accent)", color: "#000" }}
+            >
+              D
+            </span>
+            <span
+              className="font-bold text-base"
+              style={{ fontFamily: "Syne, sans-serif" }}
+            >
+              DecayStore
+            </span>
           </Link>
           {user && (
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${planBadgeColor}`}>
+            <span
+              className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize"
+              style={{ background: planBadge.bg, color: planBadge.color, fontFamily: "DM Mono, monospace" }}
+            >
               {user.plan}
             </span>
           )}
@@ -47,7 +68,10 @@ export function DashboardHeader({ user }: Props) {
           {user?.plan === "free" && (
             <Link
               href="/pricing"
-              className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-md hover:bg-gray-700 transition-colors"
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+              style={{ background: "var(--accent)", color: "#000" }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
             >
               Upgrade
             </Link>
@@ -56,9 +80,16 @@ export function DashboardHeader({ user }: Props) {
             <button
               onClick={openBillingPortal}
               disabled={portalLoading}
-              className="text-xs text-gray-500 hover:text-gray-900 transition-colors"
+              className="text-xs transition-colors px-3 py-1.5 rounded-lg"
+              style={{
+                color: "var(--text-muted)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-card)",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--text)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
             >
-              {portalLoading ? "Loading..." : "Billing"}
+              {portalLoading ? "Loading…" : "Billing"}
             </button>
           )}
           <UserButton afterSignOutUrl="/" />
