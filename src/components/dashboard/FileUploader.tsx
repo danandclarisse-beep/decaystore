@@ -8,6 +8,7 @@ import { formatBytes } from "@/lib/utils"
 interface Props {
   onUploadComplete: () => void
   plan: string
+  currentFolderId: string | null
 }
 
 interface UploadState {
@@ -16,7 +17,7 @@ interface UploadState {
   error?: string
 }
 
-export function FileUploader({ onUploadComplete, plan }: Props) {
+export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props) {
   const [uploads, setUploads] = useState<UploadState[]>([])
 
   const updateUpload = useCallback((file: File, patch: Partial<UploadState>) => {
@@ -31,7 +32,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
     setUploads((prev) => [...prev, { file, status: "uploading" }])
 
     try {
-      // Step 1: Get presigned URL (metadata only — no size limit)
+      // Step 1: get presigned URL + create DB record in target folder
       const metaRes = await fetch("/api/files", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -39,6 +40,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
           filename: file.name,
           contentType: file.type || "application/octet-stream",
           sizeBytes: file.size,
+          folderId: currentFolderId,   // ← place file in current folder
         }),
       })
 
@@ -49,13 +51,12 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
 
       const { uploadUrl } = await metaRes.json()
 
-      // Step 2: PUT directly to R2 (browser → Cloudflare, not Vercel)
+      // Step 2: PUT directly to R2
       const r2Res = await fetch(uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": file.type || "application/octet-stream" },
         body: file,
       })
-
       if (!r2Res.ok) throw new Error(`Storage upload failed (${r2Res.status})`)
 
       updateUpload(file, { status: "done" })
@@ -74,7 +75,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
         error: err instanceof Error ? err.message : "Upload failed",
       })
     }
-  }, [onUploadComplete, updateUpload])
+  }, [onUploadComplete, updateUpload, currentFolderId])
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     acceptedFiles.forEach(uploadFile)
@@ -89,29 +90,15 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
     <div className="space-y-3">
       <div
         {...getRootProps()}
-        className="rounded-xl p-10 text-center cursor-pointer transition-all"
+        className="rounded-xl p-8 text-center cursor-pointer transition-all"
         style={{
           background: isDragActive ? "var(--accent-dim)" : "var(--bg-card)",
-          border: isDragActive
-            ? "2px dashed var(--accent)"
-            : "2px dashed var(--border)",
-        }}
-        onMouseEnter={e => {
-          if (!isDragActive) {
-            e.currentTarget.style.borderColor = "var(--text-dim)"
-            e.currentTarget.style.background = "var(--bg-hover)"
-          }
-        }}
-        onMouseLeave={e => {
-          if (!isDragActive) {
-            e.currentTarget.style.borderColor = "var(--border)"
-            e.currentTarget.style.background = "var(--bg-card)"
-          }
+          border: isDragActive ? "2px dashed var(--accent)" : "2px dashed var(--border)",
         }}
       >
         <input {...getInputProps()} />
         <UploadCloudIcon
-          className="w-8 h-8 mx-auto mb-3"
+          className="w-7 h-7 mx-auto mb-2"
           style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
         />
         <p className="text-sm font-medium">
@@ -128,10 +115,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
             <div
               key={i}
               className="flex items-center gap-3 rounded-lg px-4 py-3"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-              }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
             >
               {u.status === "done" ? (
                 <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#34d399" }} />
@@ -149,10 +133,7 @@ export function FileUploader({ onUploadComplete, plan }: Props) {
                   <p className="text-xs mt-0.5" style={{ color: "#ef4444" }}>{u.error}</p>
                 )}
               </div>
-              <span
-                className="text-xs shrink-0"
-                style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}
-              >
+              <span className="text-xs shrink-0" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                 {formatBytes(u.file.size)}
               </span>
             </div>

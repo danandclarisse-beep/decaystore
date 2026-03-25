@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
-import { files, users } from "@/lib/db/schema"
+import { files, fileVersions, users } from "@/lib/db/schema"
 import { eq, and, ne, desc, sql } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 import { getPresignedUploadUrl, buildR2Key } from "@/lib/r2"
@@ -32,27 +32,31 @@ export async function GET() {
 }
 
 // ─── POST /api/files — generate presigned upload URL ──────
-// Browser uploads directly to R2 using the returned URL (no Vercel size limit).
 export async function POST(request: Request) {
   try {
     const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
-
-    const { filename, contentType, sizeBytes, description } = await request.json()
+    const { filename, contentType, sizeBytes, description, folderId } = await request.json()
 
     if (!filename || !contentType || !sizeBytes) {
-      return NextResponse.json(
-        { error: "Missing filename, contentType, or sizeBytes" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Missing filename, contentType, or sizeBytes" }, { status: 400 })
     }
     if (filename.length > 255) {
       return NextResponse.json({ error: "Filename too long" }, { status: 400 })
     }
     if (sizeBytes > 5 * 1024 * 1024 * 1024) {
       return NextResponse.json({ error: "File exceeds 5 GB limit" }, { status: 400 })
+    }
+
+    // Validate folderId belongs to this user if provided
+    if (folderId) {
+      const { folders } = await import("@/lib/db/schema")
+      const folder = await db.query.folders.findFirst({
+        where: and(eq(folders.id, folderId), eq(folders.userId, user.id)),
+      })
+      if (!folder) return NextResponse.json({ error: "Folder not found" }, { status: 404 })
     }
 
     // Check storage limit
@@ -76,16 +80,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Generate presigned URL — browser PUTs directly to R2, no bytes touch Vercel
-    const r2Key = buildR2Key(user.id, filename)
+    // Generate presigned URL
+    const r2Key    = buildR2Key(user.id, filename)
     const uploadUrl = await getPresignedUploadUrl(r2Key, contentType)
 
-    // Insert file record in DB
+    // Insert file record
     const decayRateDays = PLAN_DECAY_RATES[user.plan]
     const [newFile] = await db
       .insert(files)
       .values({
         userId: user.id,
+        folderId: folderId ?? null,
         r2Key,
         filename: r2Key,
         originalFilename: filename,
@@ -95,10 +100,20 @@ export async function POST(request: Request) {
         description,
         status: "active",
         decayScore: 0,
+        currentVersionNumber: 1,
       })
       .returning()
 
-    // Atomic increment — safe under concurrent uploads, no read-modify-write race
+    // Seed version 1 record
+    await db.insert(fileVersions).values({
+      fileId: newFile.id,
+      userId: user.id,
+      versionNumber: 1,
+      r2Key,
+      sizeBytes,
+    })
+
+    // Atomic storage increment
     await db
       .update(users)
       .set({ storageUsedBytes: sql`storage_used_bytes + ${sizeBytes}` })
