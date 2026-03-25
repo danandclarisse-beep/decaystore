@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const storageUsed = user?.storageUsedBytes ?? 0
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
       <DashboardHeader user={user} />
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
@@ -48,7 +48,7 @@ export default function DashboardPage() {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-200 h-40 animate-pulse" />
+              <div key={i} className="rounded-xl h-40 animate-pulse" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }} />
             ))}
           </div>
         ) : (
