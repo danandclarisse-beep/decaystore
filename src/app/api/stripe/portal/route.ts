@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { getOrCreateUser } from "@/lib/auth-helpers"
-import { createPortalSession } from "@/lib/stripe"
+import { createPortalSession } from "@/lib/lemonsqueezy"
 
 // POST /api/stripe/portal — opens LemonSqueezy customer portal
 export async function POST() {
@@ -11,14 +11,14 @@ export async function POST() {
 
     const user = await getOrCreateUser()
 
-    if (!user.stripeCustomerId) {
+    if (!user.billingCustomerId) {
       // No subscription yet — send to pricing
       return NextResponse.json({
         url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing`,
       })
     }
 
-    const session = await createPortalSession(user.stripeCustomerId)
+    const session = await createPortalSession(user.billingCustomerId)
     return NextResponse.json({ url: session.url })
   } catch (err) {
     console.error("[POST /api/stripe/portal]", err)
