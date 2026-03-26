@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { files } from "@/lib/db/schema"
-import { eq, and } from "drizzle-orm"
+import { eq, and, ne, isNull } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 
 type Params = { params: { id: string } }
@@ -32,9 +32,29 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
     if (file.status === "deleted") return NextResponse.json({ error: "File is deleted" }, { status: 410 })
 
+    // Check for duplicate name within the same folder
+    const trimmed = name.trim()
+    const duplicate = await db.query.files.findFirst({
+      where: and(
+        eq(files.userId, user.id),
+        eq(files.originalFilename, trimmed),
+        ne(files.id, params.id),
+        ne(files.status, "deleted"),
+        file.folderId
+          ? eq(files.folderId, file.folderId)
+          : isNull(files.folderId)
+      ),
+    })
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `A file named "${trimmed}" already exists in this folder.` },
+        { status: 409 }
+      )
+    }
+
     const [updated] = await db
       .update(files)
-      .set({ originalFilename: name.trim() })
+      .set({ originalFilename: trimmed })
       .where(eq(files.id, params.id))
       .returning()
 

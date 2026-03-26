@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   RefreshCwIcon, Trash2Icon, DownloadIcon, ClockIcon,
   FolderIcon, PencilIcon, FolderInputIcon, GitBranchIcon,
-  UploadIcon, XIcon, ChevronDownIcon,
+  UploadIcon, XIcon, ChevronDownIcon, EyeIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, getMimeTypeIcon } from "@/lib/utils"
 import { getDecayColor, getDecayLabel, getDaysUntilDeletion } from "@/lib/decay-utils"
@@ -23,28 +23,51 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
   const [actionLoading, setActionLoading]   = useState<string | null>(null)
   const [renamingId, setRenamingId]         = useState<string | null>(null)
   const [renameValue, setRenameValue]       = useState("")
+  const [renameError, setRenameError]       = useState<string | null>(null)
   const [movingFile, setMovingFile]         = useState<File | null>(null)
   const [versionsFile, setVersionsFile]     = useState<File | null>(null)
   const [versions, setVersions]             = useState<FileVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [newVersionFile, setNewVersionFile] = useState<File | null>(null)
   const [uploadingVersion, setUploadingVersion] = useState(false)
+  const [previewFile, setPreviewFile]       = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl]         = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  // Suppress onBlur firing rename immediately after double-click opens the input
+  const renameFreshRef = useRef(false)
 
   // ── Rename ──────────────────────────────────────────────
   async function handleRename(fileId: string) {
     if (!renameValue.trim()) { setRenamingId(null); return }
     setActionLoading(fileId + "-rename")
+    setRenameError(null)
     try {
-      await fetch(`/api/files/${fileId}/rename`, {
+      const res = await fetch(`/api/files/${fileId}/rename`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: renameValue.trim() }),
       })
+      const data = await res.json()
+      if (!res.ok) {
+        setRenameError(data.error ?? "Rename failed")
+        setActionLoading(null)
+        return // keep input open so user can fix the name
+      }
       onRefresh()
-    } finally {
-      setActionLoading(null)
       setRenamingId(null)
+    } catch {
+      setRenameError("Rename failed")
+      setActionLoading(null)
+      return
     }
+    setActionLoading(null)
+  }
+
+  function startRename(file: File) {
+    renameFreshRef.current = true
+    setRenameError(null)
+    setRenamingId(file.id)
+    setRenameValue(file.originalFilename)
   }
 
   // ── Move ────────────────────────────────────────────────
@@ -64,20 +87,40 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
   }
 
   // ── Download ────────────────────────────────────────────
+  // Fetch the blob via the presigned URL so the browser treats it as a
+  // download rather than navigating to it (R2 presigned URLs don't carry
+  // Content-Disposition: attachment by default).
   async function handleDownload(fileId: string, filename: string) {
     setActionLoading(fileId + "-download")
     try {
       const res  = await fetch(`/api/files/${fileId}`)
       const data = await res.json()
       if (data.downloadUrl) {
-        const a = document.createElement("a")
-        a.href = data.downloadUrl
+        const blob = await fetch(data.downloadUrl).then((r) => r.blob())
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement("a")
+        a.href     = url
         a.download = filename
         a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 10_000)
         onRefresh()
       }
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  // ── Preview ─────────────────────────────────────────────
+  async function handlePreview(file: File) {
+    setPreviewFile(file)
+    setPreviewUrl(null)
+    setPreviewLoading(true)
+    try {
+      const res  = await fetch(`/api/files/${file.id}`)
+      const data = await res.json()
+      if (data.downloadUrl) setPreviewUrl(data.downloadUrl)
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -249,27 +292,36 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                 </span>
                 <div className="flex-1 min-w-0">
                   {isRenaming ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleRename(file.id)
-                        if (e.key === "Escape") setRenamingId(null)
-                      }}
-                      onBlur={() => handleRename(file.id)}
-                      className="w-full text-sm rounded px-2 py-0.5 outline-none"
-                      style={{
-                        background: "var(--bg-hover)",
-                        border: "1px solid var(--accent)",
-                        color: "var(--text)",
-                      }}
-                    />
+                    <div>
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRename(file.id)
+                          if (e.key === "Escape") { setRenamingId(null); setRenameError(null) }
+                        }}
+                        onFocus={() => { renameFreshRef.current = false }}
+                        onBlur={() => {
+                          if (renameFreshRef.current) { renameFreshRef.current = false; return }
+                          handleRename(file.id)
+                        }}
+                        className="w-full text-sm rounded px-2 py-0.5 outline-none"
+                        style={{
+                          background: "var(--bg-hover)",
+                          border: `1px solid ${renameError ? "#ef4444" : "var(--accent)"}`,
+                          color: "var(--text)",
+                        }}
+                      />
+                      {renameError && (
+                        <p className="text-xs mt-1" style={{ color: "#ef4444" }}>{renameError}</p>
+                      )}
+                    </div>
                   ) : (
                     <p
                       className="text-sm font-medium truncate cursor-pointer"
                       title="Double-click to rename"
-                      onDoubleClick={() => { setRenamingId(file.id); setRenameValue(file.originalFilename) }}
+                      onDoubleClick={() => startRename(file)}
                     >
                       {file.originalFilename}
                     </p>
@@ -301,6 +353,14 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
               {/* Primary actions */}
               <div className="flex items-center gap-1 pt-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                 <button
+                  onClick={() => handlePreview(file)}
+                  disabled={!!actionLoading}
+                  title="Preview"
+                  className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md disabled:opacity-50"
+                >
+                  <EyeIcon className="w-3.5 h-3.5" /> Preview
+                </button>
+                <button
                   onClick={() => handleDownload(file.id, file.originalFilename)}
                   disabled={!!actionLoading}
                   title="Download"
@@ -319,7 +379,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
 
                 {/* More actions */}
                 <button
-                  onClick={() => { setRenamingId(file.id); setRenameValue(file.originalFilename) }}
+                  onClick={() => startRename(file)}
                   disabled={!!actionLoading}
                   title="Rename"
                   className="action-btn p-1.5 rounded-md disabled:opacity-50"
@@ -493,7 +553,87 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
           )}
         </Modal>
       )}
+      {/* ── Preview modal ───────────────────────────────── */}
+      {previewFile && (
+        <Modal
+          title={previewFile.originalFilename}
+          onClose={() => { setPreviewFile(null); setPreviewUrl(null) }}
+          wide
+        >
+          <div className="flex flex-col gap-4">
+            {/* File meta */}
+            <div className="flex items-center justify-between">
+              <p className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
+                {formatBytes(previewFile.sizeBytes)} · {previewFile.mimeType}
+              </p>
+              <button
+                onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
+                className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"
+              >
+                <DownloadIcon className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+
+            {/* Preview area */}
+            <div
+              className="rounded-xl overflow-hidden flex items-center justify-center"
+              style={{ background: "var(--bg-elevated)", minHeight: "240px", border: "1px solid var(--border)" }}
+            >
+              {previewLoading ? (
+                <div className="flex flex-col items-center gap-3" style={{ color: "var(--text-muted)" }}>
+                  <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
+                  <p className="text-xs">Loading preview…</p>
+                </div>
+              ) : !previewUrl ? (
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>Preview unavailable</p>
+              ) : previewFile.mimeType.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrl} alt={previewFile.originalFilename} className="max-w-full max-h-[60vh] object-contain" />
+              ) : previewFile.mimeType.startsWith("video/") ? (
+                <video src={previewUrl} controls className="max-w-full max-h-[60vh]" />
+              ) : previewFile.mimeType.startsWith("audio/") ? (
+                <audio src={previewUrl} controls className="w-full" />
+              ) : previewFile.mimeType === "application/pdf" ? (
+                <iframe src={previewUrl} className="w-full rounded-xl" style={{ height: "60vh" }} />
+              ) : previewFile.mimeType.startsWith("text/") ? (
+                <TextPreview url={previewUrl} />
+              ) : (
+                <div className="flex flex-col items-center gap-3 p-8" style={{ color: "var(--text-muted)" }}>
+                  <span className="text-5xl">{getMimeTypeIcon(previewFile.mimeType)}</span>
+                  <p className="text-sm text-center">No preview available for this file type.</p>
+                  <button
+                    onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
+                    className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md mt-1"
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5" /> Download to open
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </>
+  )
+}
+
+// ── Text file preview (fetches and renders plain text) ────
+function TextPreview({ url }: { url: string }) {
+  const [text, setText] = useState<string | null>(null)
+  // useEffect so the fetch runs after mount, not during render
+  // We inline it via a ref+flag pattern to avoid importing useEffect at top level
+  const fetchedRef = useRef(false)
+  if (!fetchedRef.current) {
+    fetchedRef.current = true
+    fetch(url).then((r) => r.text()).then(setText).catch(() => setText("Could not load text."))
+  }
+  return (
+    <pre
+      className="w-full max-h-96 overflow-auto text-xs p-4 rounded-xl"
+      style={{ background: "var(--bg-elevated)", color: "var(--text)", fontFamily: "DM Mono, monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+    >
+      {text ?? "Loading…"}
+    </pre>
   )
 }
 
