@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { verifyLemonSqueezyWebhook } from "@/lib/stripe"
+import { verifyLemonSqueezyWebhook } from "@/lib/lemonsqueezy"
 import { db } from "@/lib/db"
 import { users } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -48,8 +48,8 @@ export async function POST(request: Request) {
           .update(users)
           .set({
             plan,
-            stripeCustomerId: customerId,       // reusing stripeCustomerId field for LS customer ID
-            stripeSubscriptionId: subscriptionId,
+            billingCustomerId: customerId,       // reusing billingCustomerId field for LS customer ID
+            billingSubscriptionId: subscriptionId,
             updatedAt: new Date(),
           })
           .where(eq(users.id, userId))
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
           .update(users)
           .set({
             plan: "free",
-            stripeSubscriptionId: null,
+            billingSubscriptionId: null,
             updatedAt: new Date(),
           })
           .where(eq(users.id, userId))

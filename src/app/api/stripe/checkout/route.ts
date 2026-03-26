@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { getOrCreateUser } from "@/lib/auth-helpers"
-import { createCheckoutSession } from "@/lib/stripe"
+import { createCheckoutSession } from "@/lib/lemonsqueezy"
 import { z } from "zod"
 
 const checkoutSchema = z.object({

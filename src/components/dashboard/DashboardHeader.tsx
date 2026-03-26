@@ -76,7 +76,7 @@ export function DashboardHeader({ user }: Props) {
               Upgrade
             </Link>
           )}
-          {user?.stripeCustomerId && (
+          {user?.billingCustomerId && (
             <button
               onClick={openBillingPortal}
               disabled={portalLoading}

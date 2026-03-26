@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
-import { files, users } from "@/lib/db/schema"
+import { files, fileVersions, users } from "@/lib/db/schema"
 import { eq, and, sql } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 import { getPresignedDownloadUrl, deleteFromR2 } from "@/lib/r2"
@@ -69,17 +69,34 @@ export async function DELETE(_req: Request, { params }: Params) {
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
     if (file.status === "deleted") return NextResponse.json({ success: true })
 
-    // Delete from R2 first — if this fails we bail before touching the DB
-    // so the user can safely retry
-    await deleteFromR2(file.r2Key)
+    // [P1-2] Fetch all version records so we can purge every R2 object,
+    // not just the current version's r2Key. Versions that were superseded
+    // would otherwise be orphaned in R2 forever.
+    const versions = await db.query.fileVersions.findMany({
+      where: eq(fileVersions.fileId, file.id),
+    })
 
-    // Mark as deleted in DB
+    // Delete every R2 object. If any deletion fails we bail before touching
+    // the DB, so the user can safely retry and no DB record is left dangling.
+    const keysToDelete = [
+      file.r2Key,
+      ...versions.map((v) => v.r2Key).filter((k) => k !== file.r2Key),
+    ]
+    for (const key of keysToDelete) {
+      await deleteFromR2(key)
+    }
+
+    // Remove all version DB records
+    await db.delete(fileVersions).where(eq(fileVersions.fileId, file.id))
+
+    // Mark the file as deleted in DB
     await db
       .update(files)
       .set({ status: "deleted", deletedAt: new Date() })
       .where(eq(files.id, file.id))
 
-    // Atomic decrement — safe under concurrent deletes, floors at 0
+    // Atomic decrement using the file's current sizeBytes.
+    // Floors at 0 to guard against any prior accounting drift.
     await db
       .update(users)
       .set({ storageUsedBytes: sql`GREATEST(0, storage_used_bytes - ${file.sizeBytes})` })

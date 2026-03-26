@@ -3,8 +3,8 @@
 // For UI utilities (colors, labels, scores), import from @/lib/decay-utils instead.
 
 import { db } from "@/lib/db"
-import { files, decayEvents, users } from "@/lib/db/schema"
-import { eq, ne, and } from "drizzle-orm"
+import { files, fileVersions, decayEvents, users } from "@/lib/db/schema"
+import { eq, ne, and, inArray } from "drizzle-orm"
 import { deleteFromR2 } from "@/lib/r2"
 import { sendDecayWarningEmail, sendDecayDeletedEmail } from "@/lib/email"
 import {
@@ -38,6 +38,15 @@ export async function runDecayCycle(): Promise<{
   const activeFiles = await db.query.files.findMany({
     where: ne(files.status, "deleted"),
   })
+
+  // [P3-1] Pre-fetch all users referenced by these files in a single query.
+  // Previously every status-changing file triggered a separate findFirst,
+  // causing up to N serial DB round-trips per cron run.
+  const uniqueUserIds = Array.from(new Set(activeFiles.map((f) => f.userId)))
+  const affectedUsers = uniqueUserIds.length > 0
+    ? await db.query.users.findMany({ where: inArray(users.id, uniqueUserIds) })
+    : []
+  const userMap = new Map(affectedUsers.map((u) => [u.id, u]))
 
   for (const file of activeFiles) {
     try {
@@ -78,14 +87,26 @@ export async function runDecayCycle(): Promise<{
           decayScoreAtEvent: newScore,
         })
 
+        // Resolve user from pre-fetched map (no extra DB query)
+        const fileUser = userMap.get(file.userId)
+
         // Handle deletion
         if (newStatus === "deleted") {
-          await deleteFromR2(file.r2Key)
-
-          // Fetch user explicitly (avoids 'never' type from relation join)
-          const fileUser = await db.query.users.findFirst({
-            where: eq(users.id, file.userId),
+          // [P1-3] Fetch all version records and delete every R2 object,
+          // not just the current version key. Without this, superseded
+          // version objects accumulate in R2 indefinitely.
+          const versions = await db.query.fileVersions.findMany({
+            where: eq(fileVersions.fileId, file.id),
           })
+          const keysToDelete = [
+            file.r2Key,
+            ...versions.map((v) => v.r2Key).filter((k) => k !== file.r2Key),
+          ]
+          for (const key of keysToDelete) {
+            await deleteFromR2(key)
+          }
+          // Remove all version DB records
+          await db.delete(fileVersions).where(eq(fileVersions.fileId, file.id))
 
           // Update user storage count
           await db
@@ -105,9 +126,6 @@ export async function runDecayCycle(): Promise<{
         // Send warning email
         if (newStatus === "warned" && oldStatus === "active") {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
-          const fileUser = await db.query.users.findFirst({
-            where: eq(users.id, file.userId),
-          })
           await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "warning")
           stats.warned++
         }
@@ -115,9 +133,6 @@ export async function runDecayCycle(): Promise<{
         // Send critical warning email
         if (newStatus === "critical" && oldStatus !== "critical") {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
-          const fileUser = await db.query.users.findFirst({
-            where: eq(users.id, file.userId),
-          })
           await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "critical")
           stats.critical++
         }

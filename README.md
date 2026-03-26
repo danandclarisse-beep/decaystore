@@ -14,7 +14,7 @@ A Next.js SaaS where uploaded files slowly decay and auto-delete if not accessed
 | Auth         | Clerk                       | Free tier                                |
 | Database     | Neon (serverless Postgres)  | Free tier                                |
 | Storage      | Cloudflare R2               | ~$0.015/GB/mo, **zero egress**           |
-| Billing      | Stripe                      | 2.9% + 30¢ per transaction               |
+| Billing      | LemonSqueezy                | 5% + $0.50 per transaction               |
 | Email        | Resend                      | Free up to 3,000/mo                      |
 | Hosting+Cron | Vercel                      | Free tier                                |
 
@@ -70,11 +70,14 @@ cp .env.example .env.local
 ]
 ```
 
-**Stripe** — https://dashboard.stripe.com
-- Create two products: "Starter" ($5/mo) and "Pro" ($15/mo)
-- Copy the price IDs into `.env.local`
-- Set up a webhook endpoint at `/api/webhooks/stripe`
-- Subscribe to: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+**LemonSqueezy** — https://app.lemonsqueezy.com
+- Create a store and two products: "Starter" ($5/mo) and "Pro" ($15/mo)
+- Copy each product's Variant ID → `LEMONSQUEEZY_VARIANT_STARTER` / `LEMONSQUEEZY_VARIANT_PRO`
+- Copy your Store ID → `LEMONSQUEEZY_STORE_ID`
+- Create an API key → `LEMONSQUEEZY_API_KEY`
+- Set up a webhook endpoint at `/api/webhooks/stripe` pointing to your deployed URL
+- Subscribe to: `order_created`, `subscription_created`, `subscription_updated`, `subscription_cancelled`, `subscription_expired`
+- Copy the webhook signing secret → `LEMONSQUEEZY_WEBHOOK_SECRET`
 
 **Resend** — https://resend.com
 - Create an account and verify your sending domain
@@ -105,8 +108,14 @@ src/
 │   │   ├── cron/decay/         # Nightly decay runner
 │   │   ├── files/              # File CRUD + presigned URLs
 │   │   ├── files/[id]/         # Download, renew, delete
-│   │   ├── stripe/             # Checkout + billing portal
-│   │   └── webhooks/           # Stripe webhook handler
+│   │   ├── files/[id]/versions/              # Version list + new version upload
+│   │   ├── files/[id]/versions/[versionId]/  # Version download + delete
+│   │   ├── files/[id]/move/    # Move file to folder
+│   │   ├── files/[id]/rename/  # Rename file display name
+│   │   ├── folders/            # Folder CRUD
+│   │   ├── folders/[id]/       # Rename + delete folder
+│   │   ├── stripe/             # Checkout + billing portal (LemonSqueezy)
+│   │   └── webhooks/           # LemonSqueezy webhook handler
 │   ├── auth/                   # Sign-in / sign-up (Clerk)
 │   ├── about/                  # About page
 │   ├── contact/                # Contact page
@@ -122,6 +131,7 @@ src/
 │   │   ├── DashboardHeader.tsx
 │   │   ├── FileGrid.tsx
 │   │   ├── FileUploader.tsx
+│   │   ├── FolderSidebar.tsx
 │   │   └── StorageBar.tsx
 │   └── shared/
 │       ├── Nav.tsx             # Shared sticky nav (all public pages)
@@ -134,8 +144,9 @@ src/
 │   ├── decay.ts                # Core decay engine (server-only)
 │   ├── decay-utils.ts          # Decay helpers (client-safe)
 │   ├── email.ts                # Resend email templates
+│   ├── lemonsqueezy.ts         # LemonSqueezy client (was stripe.ts)
+│   ├── plans.ts                # Plan definitions (client-safe, single source of truth)
 │   ├── r2.ts                   # Cloudflare R2 client + presigned URLs
-│   ├── stripe.ts               # Stripe client + plans
 │   └── utils.ts                # Shared utilities
 └── middleware.ts               # Route protection (Clerk)
 ```
@@ -260,18 +271,19 @@ R2_ACCESS_KEY_ID=       # S3 Access Key ID (not the cfat_ token)
 R2_SECRET_ACCESS_KEY=   # S3 Secret Access Key
 R2_BUCKET_NAME=         # e.g. decaystore-files
 
-# Stripe
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-NEXT_PUBLIC_LS_VARIANT_STARTER=
-NEXT_PUBLIC_LS_VARIANT_PRO=
+# LemonSqueezy
+LEMONSQUEEZY_API_KEY=
+LEMONSQUEEZY_STORE_ID=
+LEMONSQUEEZY_VARIANT_STARTER=
+LEMONSQUEEZY_VARIANT_PRO=
+LEMONSQUEEZY_WEBHOOK_SECRET=
+NEXT_PUBLIC_APP_URL=    # e.g. https://yourdomain.vercel.app
 
 # Resend
 RESEND_API_KEY=
 
 # Cron protection
-CRON_SECRET=
+CRON_SECRET=            # Long random string, e.g. openssl rand -hex 32
 ```
 
 ### Manual cron trigger (non-Vercel)
@@ -298,8 +310,43 @@ Uploads go directly to R2 via presigned URLs — R2 credentials and bucket must 
 ## Known Limitations
 
 - **No transactions:** The `neon-http` driver does not support DB transactions. Storage counters use atomic SQL increments which prevents most race conditions, but is not fully ACID. Switch to `neon-serverless` for full transaction support.
-- **Cron scaling:** The nightly decay cron processes files sequentially. At very high file counts (100k+), it may approach Vercel's 60s timeout. Consider batching or moving to a queue at scale.
-- **No file versioning:** Uploading a file with the same name creates a new entry. There is no version history.
+- **Cron scaling:** The nightly decay cron currently processes all files in memory. At very high file counts this may approach Vercel's 60s function timeout. Cursor-based pagination is planned for a future phase.
+- **Orphan guard on failed upload:** If the browser upload to R2 fails mid-transfer, a DB record exists with no corresponding R2 object. The file will appear in the dashboard but fail to download. A future cleanup sweep will handle stale unconfirmed records.
+
+---
+
+## Fix & Enhancement Log
+
+Tracked from the Beta 3 audit. Each phase is non-breaking and applied in sequence.
+README is updated after each confirmed phase.
+
+### Phase 1 — Critical data integrity ✅
+*R2 leaks, storage accounting, folder cascade mismatch*
+
+- **[P1-1] Version upload: delete old R2 object** — `POST /api/files/[id]/versions` now calls `deleteFromR2` on the previous `r2Key` before updating the file record, and decrements `storageUsedBytes` for the displaced bytes.
+- **[P1-2] Manual delete: purge all version R2 objects** — `DELETE /api/files/[id]` now fetches all `fileVersions` records, deletes every R2 object by key, deletes the version DB rows, then marks the parent file deleted. No orphaned R2 objects.
+- **[P1-3] Decay cron: purge all version objects on auto-delete** — `runDecayCycle()` performs the same full-version R2 cleanup as manual delete when a file reaches decay score 1.0.
+- **[P1-4] Storage accounting: subtract old version bytes on re-upload** — `storageUsedBytes` is decremented for the displaced version when a new version is uploaded, keeping the counter accurate across re-uploads.
+- **[P1-5] Folder cascade: align DB to app logic** — Migration corrects `folders.parent_id` from `ON DELETE CASCADE` to `ON DELETE SET NULL`, matching the app-level "move sub-folders to root" behavior on folder delete.
+
+### Phase 2 — Code quality & naming ✅
+*Duplicate exports, naming confusion, dead code, bad imports*
+
+- **[P2-1] Rename `stripe.ts` → `lemonsqueezy.ts`** — All imports updated. The file has used LemonSqueezy since billing migration; the Stripe name was actively misleading.
+- **[P2-2] Eliminate duplicate plan definitions** — `lemonsqueezy.ts` now imports `PLANS` and `PLAN_STORAGE_LIMITS` from `plans.ts` instead of re-declaring them. Single source of truth.
+- **[P2-3] Rename billing schema fields** — `stripeCustomerId` → `billingCustomerId`, `stripeSubscriptionId` → `billingSubscriptionId`. Migration + all call-site updates applied.
+- **[P2-4] Remove unused `@lemonsqueezy/lemonsqueezy.js` SDK** — All LS API calls are done via `fetch`; the official SDK was never imported.
+- **[P2-5] Remove unused `dotenv` dependency** — Next.js handles `.env` loading natively.
+- **[P2-6] Delete `src/app/api/r2-test/route.ts`** — Development-only route removed before it could ship to production.
+- **[P2-7] Fix dynamic imports in version delete handler** — Static top-of-file imports replace the inline `await import(...)` calls that were used to work around a TypeScript inference issue.
+
+### Phase 3 — Performance ✅
+*Cron N+1 queries, expensive file count, R2 key collisions*
+
+- **[P3-1] Cron: batch user lookups** — `runDecayCycle()` collects all affected `userId` values before iterating, fetches all users in a single `WHERE id IN (...)` query, and uses an in-memory map — eliminating the per-file DB round-trip.
+- **[P3-2] `POST /api/files`: `COUNT(*)` instead of `findMany`** — File count check no longer loads every file row; uses a single `COUNT` query.
+- **[P3-3] `getOrCreateUser`: single-query upsert** — Replaced the check-then-insert pattern with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, collapsing two DB round-trips into one.
+- **[P3-4] `buildR2Key`: UUID prefix instead of `Date.now()`** — `crypto.randomUUID()` replaces the millisecond timestamp, eliminating the theoretical same-millisecond key collision.
 
 ---
 

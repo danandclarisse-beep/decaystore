@@ -5,10 +5,10 @@ import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { files, fileVersions, users } from "@/lib/db/schema"
-import { eq, and, ne, desc, sql } from "drizzle-orm"
+import { eq, and, ne, desc, sql, count } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 import { getPresignedUploadUrl, buildR2Key } from "@/lib/r2"
-import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/stripe"
+import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import { PLAN_DECAY_RATES } from "@/lib/decay"
 
 // ─── GET /api/files — list user's files ───────────────────
@@ -68,12 +68,13 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check file count limit
+    // [P3-2] Check file count limit using COUNT(*) instead of loading all rows
     const plan = PLANS[user.plan]
-    const existingFiles = await db.query.files.findMany({
-      where: and(eq(files.userId, user.id), ne(files.status, "deleted")),
-    })
-    if (existingFiles.length >= plan.maxFiles) {
+    const [{ fileCount }] = await db
+      .select({ fileCount: count() })
+      .from(files)
+      .where(and(eq(files.userId, user.id), ne(files.status, "deleted")))
+    if (fileCount >= plan.maxFiles) {
       return NextResponse.json(
         { error: `File limit reached (${plan.maxFiles} files on ${plan.name} plan).` },
         { status: 402 }

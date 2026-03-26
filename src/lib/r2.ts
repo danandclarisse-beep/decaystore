@@ -73,9 +73,11 @@ export async function objectExists(key: string): Promise<boolean> {
   }
 }
 
-// Build a unique R2 key for a user's file
+// [P3-4] Build a unique R2 key for a user's file.
+// Uses crypto.randomUUID() instead of Date.now() to avoid the theoretical
+// same-millisecond collision on concurrent uploads.
 export function buildR2Key(userId: string, filename: string): string {
-  const timestamp = Date.now()
+  const uid = crypto.randomUUID()
   const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_")
-  return `users/${userId}/${timestamp}-${sanitized}`
+  return `users/${userId}/${uid}-${sanitized}`
 }

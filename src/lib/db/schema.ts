@@ -26,8 +26,8 @@ export const users = pgTable("users", {
   clerkId: text("clerk_id").notNull().unique(),
   email: text("email").notNull(),
   plan: planEnum("plan").notNull().default("free"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
+  billingCustomerId: text("billing_customer_id"),
+  billingSubscriptionId: text("billing_subscription_id"),
   storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
     .notNull()
     .default(0),
