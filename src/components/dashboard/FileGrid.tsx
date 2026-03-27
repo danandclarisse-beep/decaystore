@@ -91,6 +91,17 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
         const a    = document.createElement("a")
         a.href = url; a.download = filename; a.click()
         setTimeout(() => URL.revokeObjectURL(url), 10_000)
+        // Server resets lastAccessedAt on GET — mirror that in local state
+        const accessedAt = new Date()
+        setLocalFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? { ...f, decayScore: 0, lastAccessedAt: accessedAt, status: "active" as const, warnedAt: null }
+              : f
+          )
+        )
+        setRenewedId(fileId)
+        setTimeout(() => setRenewedId((id) => (id === fileId ? null : id)), 3000)
         onRefresh()
       }
     } finally { stopLoading(key) }
@@ -290,20 +301,16 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                   ) : (
                     <span className="text-xs font-semibold" style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}>{decayLabel}</span>
                   )}
-                  <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
+                  <span className="text-xs flex items-center gap-1 cursor-help" title="Decay timer resets automatically when you download or preview a file. Use Renew to reset it manually at any time." style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                     <ClockIcon className="w-3 h-3" />
-                    {isRenewed ? `expires in ${file.decayRateDays}d` : `${daysLeft}d left`}
+                    {(isRenewed || file.decayScore === 0) ? `${file.decayRateDays}d left` : `${daysLeft}d left`}
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
                   <div className={`h-full rounded-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
                     style={{ width: isRenewed ? "0%" : `${file.decayScore * 100}%`, background: isRenewed ? "#34d399" : decayColor }} />
                 </div>
-                {!isRenewed && (
-                  <p className="text-xs mt-1" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
-                    {daysLeft === 0 ? "⚠ Deletes soon — renew now" : `Auto-resets on download · manual Renew resets anytime`}
-                  </p>
-                )}
+
               </div>
 
               {isConfirmingDelete ? (
