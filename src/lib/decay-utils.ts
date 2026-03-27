@@ -57,3 +57,19 @@ export function getDaysUntilDeletion(
   const remaining = (1 - score) * decayRateDays
   return Math.max(0, Math.floor(remaining))
 }
+
+// ─── Human-readable time until deletion (days + hours) ───
+export function getTimeUntilDeletion(
+  lastAccessedAt: Date,
+  decayRateDays: number
+): string {
+  const score = calculateDecayScore(lastAccessedAt, decayRateDays)
+  const remainingMs = Math.max(0, (1 - score) * decayRateDays * 24 * 60 * 60 * 1000)
+  const totalHours = Math.floor(remainingMs / (1000 * 60 * 60))
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  if (days === 0 && hours === 0) return "< 1h"
+  if (days === 0) return `${hours}h`
+  if (hours === 0) return `${days}d`
+  return `${days}d ${hours}h`
+}

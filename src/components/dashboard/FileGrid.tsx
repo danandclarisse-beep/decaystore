@@ -8,7 +8,7 @@ import {
   AlertTriangleIcon, CheckIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, getMimeTypeIcon } from "@/lib/utils"
-import { getDecayColor, getDecayLabel, getDaysUntilDeletion } from "@/lib/decay-utils"
+import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion } from "@/lib/decay-utils"
 import type { File, Folder, FileVersion } from "@/lib/db/schema"
 
 interface Props {
@@ -102,7 +102,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
         )
         setRenewedId(fileId)
         setTimeout(() => setRenewedId((id) => (id === fileId ? null : id)), 3000)
-        onRefresh()
+        // No onRefresh() here — it would race the DB write and revert the optimistic state
       }
     } finally { stopLoading(key) }
   }
@@ -241,7 +241,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
         {sorted.map((file) => {
           const decayColor   = getDecayColor(file.decayScore)
           const decayLabel   = getDecayLabel(file.decayScore)
-          const daysLeft     = getDaysUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)
+          const timeLeft     = getTimeUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)
           const isCritical   = file.decayScore >= 0.75
           const isExpiring   = file.decayScore >= 0.9
           const isRenaming   = renamingId === file.id
@@ -303,7 +303,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                   )}
                   <span className="text-xs flex items-center gap-1 cursor-help" title="Decay timer resets automatically when you download or preview a file. Use Renew to reset it manually at any time." style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                     <ClockIcon className="w-3 h-3" />
-                    {(isRenewed || file.decayScore === 0) ? `${file.decayRateDays}d left` : `${daysLeft}d left`}
+                    {(isRenewed || file.decayScore === 0) ? `${file.decayRateDays}d left` : `${timeLeft} left`}
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
