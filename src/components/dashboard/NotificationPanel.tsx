@@ -13,6 +13,7 @@ interface Props {
   onDismissAll: () => void
   onMarkAllRead: () => void
   onClose: () => void
+  mobileSheet?: boolean
 }
 
 const SEVERITY_ICON: Record<NotifSeverity, React.ReactNode> = {
@@ -42,11 +43,13 @@ export function NotificationPanel({
   onDismissAll,
   onMarkAllRead,
   onClose,
+  mobileSheet = false,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click
+  // Close on outside click (desktop dropdown only)
   useEffect(() => {
+    if (mobileSheet) return
     function handle(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
@@ -54,7 +57,7 @@ export function NotificationPanel({
     }
     document.addEventListener("mousedown", handle)
     return () => document.removeEventListener("mousedown", handle)
-  }, [onClose])
+  }, [onClose, mobileSheet])
 
   // Close on Escape
   useEffect(() => {
@@ -73,14 +76,14 @@ export function NotificationPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 mt-2 z-50 flex flex-col"
+      className={mobileSheet ? "w-full flex flex-col" : "absolute right-0 mt-2 z-50 flex flex-col"}
       style={{
-        width: "min(360px, calc(100vw - 2rem))",
+        width: mobileSheet ? "100%" : "min(360px, calc(100vw - 2rem))",
         background: "var(--bg-elevated)",
         border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
+        borderRadius: mobileSheet ? "1.25rem 1.25rem 0 0" : "var(--radius-lg)",
         boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)",
-        maxHeight: "min(480px, 80vh)",
+        maxHeight: mobileSheet ? "80vh" : "min(480px, 80vh)",
         overflow: "hidden",
       }}
     >

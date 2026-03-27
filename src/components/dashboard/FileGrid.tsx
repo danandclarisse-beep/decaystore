@@ -738,7 +738,7 @@ export function FileGrid({
               ) : previewFile.mimeType.startsWith("audio/") ? (
                 <audio src={previewUrl} controls className="w-full" style={{ margin: "auto" }} />
               ) : previewFile.mimeType === "application/pdf" ? (
-                <iframe src={previewUrl} className="w-full h-full rounded-xl" style={{ minHeight: "70vh" }} />
+                <PdfPreview url={previewUrl} filename={previewFile.originalFilename} />
               ) : previewFile.mimeType.startsWith("text/") ? (
                 <TextPreview url={previewUrl} />
               ) : (
@@ -758,6 +758,50 @@ export function FileGrid({
         </Modal>
       )}
     </>
+  )
+}
+
+function PdfPreview({ url, filename }: { url: string; filename: string }) {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    // Detect mobile/iOS where iframe PDF is blocked
+    const ua = navigator.userAgent
+    const mobile = /iPhone|iPad|iPod|Android/i.test(ua)
+    setIsMobile(mobile)
+  }, [])
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <span className="text-5xl">📄</span>
+        <div>
+          <p className="text-sm font-medium mb-1" style={{ color: "var(--text)" }}>
+            PDF Preview
+          </p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            In-browser PDF preview is not supported on mobile. Download the file to view it.
+          </p>
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="action-btn flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg font-medium"
+          style={{ background: "var(--accent)", color: "#000" }}
+        >
+          <DownloadIcon className="w-3.5 h-3.5" /> Open PDF
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <iframe
+      src={url}
+      title={filename}
+      className="w-full h-full rounded-xl"
+      style={{ minHeight: "70vh", border: "none" }}
+    />
   )
 }
 
@@ -791,15 +835,22 @@ function Modal({
   wide?: boolean
   fullscreen?: boolean
 }) {
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className={`rounded-t-2xl sm:rounded-2xl w-full flex flex-col ${
-          fullscreen ? "sm:max-w-6xl p-4 sm:p-6" : wide ? "sm:max-w-2xl p-4 sm:p-6" : "sm:max-w-sm p-4 sm:p-6"
+        className={`rounded-2xl w-full flex flex-col ${
+          fullscreen ? "sm:max-w-6xl p-4 sm:p-6" : wide ? "sm:max-w-2xl p-4 sm:p-6" : "max-w-sm p-4 sm:p-6"
         }`}
         style={{
           background: "var(--bg-card)",

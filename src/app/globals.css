@@ -31,6 +31,10 @@
 
   * { box-sizing: border-box; }
 
+  button, a {
+    touch-action: manipulation;
+  }
+
   html {
     background: var(--bg);
     color: var(--text);

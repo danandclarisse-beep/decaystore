@@ -140,7 +140,7 @@ export default function DashboardPage() {
         />
 
         {/* Main content */}
-        <main className="flex-1 min-w-0 space-y-4 sm:space-y-5">
+        <main className="flex-1 min-w-0 space-y-4 sm:space-y-5 pb-24 lg:pb-0">
           {/* Storage */}
           <StorageBar
             used={storageUsed}

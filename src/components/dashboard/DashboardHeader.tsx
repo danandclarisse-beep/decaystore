@@ -74,7 +74,7 @@ export function DashboardHeader({
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid var(--border-subtle)",
         }}
-        className="sticky top-0 z-30"
+        className="sticky top-0 z-50"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
           {/* Left — logo + plan badge */}
@@ -177,7 +177,7 @@ export function DashboardHeader({
                     onClick={() => setMobileMenuOpen(false)}
                   />
                   <div
-                    className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+                    className="absolute right-0 top-full mt-2 z-50 rounded-xl overflow-hidden"
                     style={{
                       minWidth: 180,
                       background: "var(--bg-elevated)",
