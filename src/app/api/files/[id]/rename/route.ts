@@ -4,8 +4,14 @@ import { db } from "@/lib/db"
 import { files } from "@/lib/db/schema"
 import { eq, and, ne, isNull } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
+import { z } from "zod"
 
 type Params = { params: { id: string } }
+
+// [S6] Zod schema for rename — replaces manual if-checks
+const renameSchema = z.object({
+  name: z.string().min(1, "File name is required").max(255, "File name too long (max 255 chars)").trim(),
+})
 
 // ─── PATCH /api/files/[id]/rename ─────────────────────────
 // Body: { name: string }
@@ -17,14 +23,15 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
-    const { name } = await request.json()
 
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ error: "File name is required" }, { status: 400 })
+    const parsed = renameSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.errors[0]?.message ?? "Invalid request" },
+        { status: 400 }
+      )
     }
-    if (name.trim().length > 255) {
-      return NextResponse.json({ error: "File name too long (max 255 chars)" }, { status: 400 })
-    }
+    const { name: trimmed } = parsed.data
 
     const file = await db.query.files.findFirst({
       where: and(eq(files.id, params.id), eq(files.userId, user.id)),
@@ -33,7 +40,6 @@ export async function PATCH(request: Request, { params }: Params) {
     if (file.status === "deleted") return NextResponse.json({ error: "File is deleted" }, { status: 410 })
 
     // Check for duplicate name within the same folder
-    const trimmed = name.trim()
     const duplicate = await db.query.files.findFirst({
       where: and(
         eq(files.userId, user.id),

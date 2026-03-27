@@ -4,11 +4,18 @@ import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { folders } from "@/lib/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
+import { z } from "zod"
+
+// [S6] Zod schema for folder creation — replaces manual if-checks
+const createFolderSchema = z.object({
+  name:     z.string().min(1, "Folder name is required").max(100, "Folder name too long (max 100 chars)").trim(),
+  parentId: z.string().uuid().optional(),
+})
 
 // ─── GET /api/folders — list all folders for user ─────────
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   try {
     const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -34,14 +41,15 @@ export async function POST(request: Request) {
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
-    const { name, parentId } = await request.json()
 
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ error: "Folder name is required" }, { status: 400 })
+    const parsed = createFolderSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.errors[0]?.message ?? "Invalid request" },
+        { status: 400 }
+      )
     }
-    if (name.trim().length > 100) {
-      return NextResponse.json({ error: "Folder name too long (max 100 chars)" }, { status: 400 })
-    }
+    const { name, parentId } = parsed.data
 
     // If parentId provided, verify it belongs to this user
     if (parentId) {
@@ -56,7 +64,7 @@ export async function POST(request: Request) {
       .values({
         userId: user.id,
         parentId: parentId ?? null,
-        name: name.trim(),
+        name,
       })
       .returning()
 

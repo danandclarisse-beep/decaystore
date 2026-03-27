@@ -1,5 +1,6 @@
 // ─── LemonSqueezy client (replaces stripe.ts) ────────────
 // Docs: https://docs.lemonsqueezy.com/api
+import { createHmac, timingSafeEqual } from "crypto"
 
 const LS_API_KEY = process.env.LEMONSQUEEZY_API_KEY!
 const LS_STORE_ID = process.env.LEMONSQUEEZY_STORE_ID!
@@ -89,14 +90,20 @@ export async function createPortalSession(customerId: string) {
 }
 
 // ─── Verify webhook signature ─────────────────────────────
+// [S1] Uses timingSafeEqual to prevent timing-based signature forgery.
+// [S7] crypto imported at the top of the file (ESM-safe, no require()).
 export function verifyLemonSqueezyWebhook(
   rawBody: string,
   signature: string
 ): boolean {
-  const crypto = require("crypto")
   const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET!
-  const hmac = crypto.createHmac("sha256", secret)
-  hmac.update(rawBody)
-  const digest = hmac.digest("hex")
-  return digest === signature
+  const digest = createHmac("sha256", secret).update(rawBody).digest()
+  let sig: Buffer
+  try {
+    sig = Buffer.from(signature, "hex")
+  } catch {
+    return false
+  }
+  // Buffers must be the same length before timingSafeEqual — otherwise it throws.
+  return sig.length === digest.length && timingSafeEqual(digest, sig)
 }
