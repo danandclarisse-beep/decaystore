@@ -83,7 +83,7 @@ export function DashboardHeader({
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid var(--border-subtle)",
         }}
-        className="sticky top-0 z-50"
+        className="sticky top-0 z-[100]"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
           {/* Left — logo + plan badge */}
@@ -168,7 +168,7 @@ export function DashboardHeader({
             )}
 
             {/* Mobile overflow menu */}
-            <div className="relative sm:hidden z-50">
+            <div className="relative sm:hidden z-[110]">
               <button
                 onClick={() => setMobileMenuOpen((o) => !o)}
                 className="flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[var(--bg-hover)] transition-colors"
@@ -181,12 +181,12 @@ export function DashboardHeader({
                 <>
                   {/* Overlay - lower z-index */}
                   <div
-                    className="fixed inset-0 z-40 bg-black/20"
+                    className="fixed inset-0 z-[105] bg-black/20"
                     onClick={() => setMobileMenuOpen(false)}
                   />
                   {/* Menu */}
                   <div
-                    className="absolute right-0 top-full mt-2 z-50 rounded-xl overflow-hidden py-1"
+                    className="absolute right-0 top-full mt-2 z-[110] rounded-xl overflow-hidden py-1"
                     style={{
                       minWidth: 180,
                       background: "var(--bg-elevated)",
@@ -243,7 +243,7 @@ export function DashboardHeader({
       {/* Billing error toast */}
       {portalError && (
         <div
-          className="fixed top-20 right-4 z-[60] flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl"
+          className="fixed top-20 right-4 z-[120] flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl"
           style={{
             background: "var(--bg-elevated)",
             border: "1px solid rgba(239,68,68,0.4)",

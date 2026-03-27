@@ -76,7 +76,7 @@ export function NotificationPanel({
   return (
     <div
       ref={panelRef}
-      className={mobileSheet ? "w-full flex flex-col" : "absolute right-0 mt-2 z-50 flex flex-col"}
+      className={mobileSheet ? "w-full flex flex-col" : "absolute right-0 mt-2 z-[110] flex flex-col"}
       style={{
         width: mobileSheet ? "100%" : "min(360px, calc(100vw - 2rem))",
         background: "var(--bg-elevated)",
