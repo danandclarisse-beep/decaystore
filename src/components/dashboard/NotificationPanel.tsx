@@ -127,7 +127,7 @@ export function NotificationPanel({
           )}
           <button
             onClick={onClose}
-            className="action-btn p-1.5 rounded-lg"
+            className="action-btn p-1.5 rounded-lg pointer-events-auto"
             aria-label="Close notifications"
           >
             <XIcon className="w-4 h-4" />

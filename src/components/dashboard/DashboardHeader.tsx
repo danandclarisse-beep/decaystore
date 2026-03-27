@@ -57,7 +57,7 @@ export function DashboardHeader({
     }
   }
 
-  // Force navigation fallback for stubborn links
+  // Force navigation fallback
   const forceNavigate = (href: string) => {
     window.location.href = href
   }
@@ -83,7 +83,7 @@ export function DashboardHeader({
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid var(--border-subtle)",
         }}
-        className="sticky top-0 z-[100]"
+        className="sticky top-0 z-[90] isolate pointer-events-auto"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
           {/* Left — logo + plan badge */}
@@ -91,7 +91,14 @@ export function DashboardHeader({
             <Link
               href="/"
               prefetch={false}
-              className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity"
+              onClick={(e) => {
+                // Extra safety: force hard navigation if we're not on root
+                if (window.location.pathname !== "/") {
+                  e.preventDefault()
+                  forceNavigate("/")
+                }
+              }}
+              className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity pointer-events-auto"
             >
               <span
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
@@ -138,16 +145,16 @@ export function DashboardHeader({
               variant="header"
             />
 
+            {/* Upgrade button — changed to button with direct navigation */}
             {user?.plan === "free" && (
-              <Link
-                href="/pricing"
-                prefetch={false}
-                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1.5 hover:opacity-85 active:opacity-75"
+              <button
+                onClick={() => forceNavigate("/pricing")}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1.5 hover:opacity-85 active:opacity-75 pointer-events-auto"
                 style={{ background: "var(--accent)", color: "#000" }}
               >
                 <ZapIcon className="w-3 h-3" />
                 Upgrade
-              </Link>
+              </button>
             )}
 
             {/* Billing button */}
@@ -155,7 +162,7 @@ export function DashboardHeader({
               <button
                 onClick={openBillingPortal}
                 disabled={portalLoading}
-                className="text-xs px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-1.5 disabled:opacity-60 transition-all hover:text-[var(--text)] hover:border-[var(--text-muted)] active:bg-[var(--bg-hover)]"
+                className="text-xs px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-1.5 disabled:opacity-60 transition-all hover:text-[var(--text)] hover:border-[var(--text-muted)] active:bg-[var(--bg-hover)] pointer-events-auto"
                 style={{
                   color: "var(--text-muted)",
                   border: "1px solid var(--border)",
@@ -171,7 +178,7 @@ export function DashboardHeader({
             <div className="relative sm:hidden z-[110]">
               <button
                 onClick={() => setMobileMenuOpen((o) => !o)}
-                className="flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[var(--bg-hover)] transition-colors"
+                className="flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[var(--bg-hover)] transition-colors pointer-events-auto"
                 aria-label="More options"
               >
                 <MoreHorizontalIcon className="w-4 h-4" />
@@ -179,7 +186,7 @@ export function DashboardHeader({
 
               {mobileMenuOpen && (
                 <>
-                  {/* Overlay - lower z-index */}
+                  {/* Overlay */}
                   <div
                     className="fixed inset-0 z-[105] bg-black/20"
                     onClick={() => setMobileMenuOpen(false)}
@@ -204,15 +211,16 @@ export function DashboardHeader({
                     )}
 
                     {user?.plan === "free" && (
-                      <Link
-                        href="/pricing"
-                        prefetch={false}
-                        onClick={() => setMobileMenuOpen(false)}
+                      <button
+                        onClick={() => {
+                          setMobileMenuOpen(false)
+                          forceNavigate("/pricing")
+                        }}
                         className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors hover:bg-[var(--bg-hover)] text-[var(--accent)]"
                       >
                         <ZapIcon className="w-4 h-4" />
                         Upgrade plan
-                      </Link>
+                      </button>
                     )}
 
                     {user?.billingCustomerId && (
