@@ -57,6 +57,11 @@ export function DashboardHeader({
     }
   }
 
+  // Force navigation fallback for stubborn links
+  const forceNavigate = (href: string) => {
+    window.location.href = href
+  }
+
   const planBadge = {
     free: { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
     starter: { bg: "rgba(59,130,246,0.12)", color: "#60a5fa" },
@@ -86,6 +91,10 @@ export function DashboardHeader({
             <Link
               href="/"
               prefetch={false}
+              onClick={(e) => {
+                // If Next.js routing fails, force it
+                if (e.defaultPrevented) forceNavigate("/")
+              }}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity"
             >
               <span
@@ -116,7 +125,7 @@ export function DashboardHeader({
             )}
           </div>
 
-          {/* Right side remains exactly the same as before */}
+          {/* Right — actions */}
           <div className="flex items-center gap-2">
             {firstName && (
               <span className="text-sm hidden md:block" style={{ color: "var(--text-muted)" }}>
@@ -133,10 +142,14 @@ export function DashboardHeader({
               variant="header"
             />
 
+            {/* Upgrade button */}
             {user?.plan === "free" && (
               <Link
                 href="/pricing"
                 prefetch={false}
+                onClick={(e) => {
+                  if (e.defaultPrevented) forceNavigate("/pricing")
+                }}
                 className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1.5 hover:opacity-85 active:opacity-75"
                 style={{ background: "var(--accent)", color: "#000" }}
               >
@@ -145,6 +158,7 @@ export function DashboardHeader({
               </Link>
             )}
 
+            {/* Billing button */}
             {user?.billingCustomerId && (
               <button
                 onClick={openBillingPortal}
@@ -161,8 +175,8 @@ export function DashboardHeader({
               </button>
             )}
 
-            {/* Mobile menu (unchanged) */}
-            <div className="relative sm:hidden">
+            {/* Mobile overflow menu */}
+            <div className="relative sm:hidden z-50">
               <button
                 onClick={() => setMobileMenuOpen((o) => !o)}
                 className="flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[var(--bg-hover)] transition-colors"
@@ -173,7 +187,12 @@ export function DashboardHeader({
 
               {mobileMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
+                  {/* Overlay - lower z-index */}
+                  <div
+                    className="fixed inset-0 z-40 bg-black/20"
+                    onClick={() => setMobileMenuOpen(false)}
+                  />
+                  {/* Menu */}
                   <div
                     className="absolute right-0 top-full mt-2 z-50 rounded-xl overflow-hidden py-1"
                     style={{
@@ -183,7 +202,6 @@ export function DashboardHeader({
                       boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
                     }}
                   >
-                    {/* ... mobile menu content same as previous version ... */}
                     {firstName && (
                       <div
                         className="px-4 py-2.5 text-xs border-b"
@@ -230,10 +248,10 @@ export function DashboardHeader({
         </div>
       </header>
 
-      {/* Error toast (unchanged) */}
+      {/* Billing error toast */}
       {portalError && (
         <div
-          className="fixed top-20 right-4 z-50 flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl"
+          className="fixed top-20 right-4 z-[60] flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl"
           style={{
             background: "var(--bg-elevated)",
             border: "1px solid rgba(239,68,68,0.4)",
@@ -241,7 +259,10 @@ export function DashboardHeader({
         >
           <AlertCircleIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
           <p className="text-xs flex-1" style={{ color: "var(--text)" }}>{portalError}</p>
-          <button onClick={() => setPortalError(null)} className="p-0.5 rounded hover:bg-[var(--bg-hover)]">
+          <button
+            onClick={() => setPortalError(null)}
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors"
+          >
             <XIcon className="w-3.5 h-3.5" />
           </button>
         </div>
