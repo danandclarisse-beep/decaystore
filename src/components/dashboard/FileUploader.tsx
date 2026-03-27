@@ -1,10 +1,10 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useDropzone } from "react-dropzone"
 import {
   UploadCloudIcon, CheckCircleIcon, XCircleIcon,
-  XIcon, RefreshCwIcon, FileIcon,
+  XIcon, RefreshCwIcon, FileIcon, FingerprintIcon,
 } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 
@@ -18,15 +18,17 @@ interface UploadState {
   id: string
   file: File
   status: "uploading" | "done" | "error"
-  progress: number  // 0–100
+  progress: number
   error?: string
 }
 
-// Accepted MIME types / extensions to show in the drop zone hint
-const ACCEPT_HINT = "Images, video, audio, PDF, documents, archives — any file up to 5 GB"
-
 export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props) {
-  const [uploads, setUploads] = useState<UploadState[]>([])
+  const [uploads, setUploads]   = useState<UploadState[]>([])
+  const [isTouch, setIsTouch]   = useState(false)
+
+  useEffect(() => {
+    setIsTouch(window.matchMedia("(pointer: coarse)").matches)
+  }, [])
 
   function patchUpload(id: string, patch: Partial<UploadState>) {
     setUploads((prev) => prev.map((u) => u.id === id ? { ...u, ...patch } : u))
@@ -41,7 +43,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
     setUploads((prev) => [...prev, { id, file, status: "uploading", progress: 0 }])
 
     try {
-      // Step 1: get presigned URL
       const metaRes = await fetch("/api/files", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -60,7 +61,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
 
       const { uploadUrl } = await metaRes.json()
 
-      // Step 2: PUT to R2 via XHR for progress events
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.upload.onprogress = (e) => {
@@ -80,7 +80,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
 
       patchUpload(id, { status: "done", progress: 100 })
       onUploadComplete()
-      // Auto-dismiss successes after 4s; user can also dismiss manually
       setTimeout(() => {
         setUploads((prev) => prev.filter((u) => !(u.id === id && u.status === "done")))
       }, 4000)
@@ -106,35 +105,45 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
     maxSize: 5 * 1024 * 1024 * 1024,
   })
 
-  const activeUploads  = uploads.filter((u) => u.status === "uploading")
-  const finishedCount  = uploads.filter((u) => u.status === "done" || u.status === "error").length
+  const activeUploads = uploads.filter((u) => u.status === "uploading")
+  const finishedCount = uploads.filter((u) => u.status === "done" || u.status === "error").length
 
   return (
     <div className="space-y-3">
       <div
         {...getRootProps()}
-        className="rounded-xl p-8 text-center cursor-pointer transition-all"
+        className="rounded-xl p-6 sm:p-8 text-center cursor-pointer transition-all"
         style={{
           background: isDragActive ? "var(--accent-dim)" : "var(--bg-card)",
           border: isDragActive ? "2px dashed var(--accent)" : "2px dashed var(--border)",
         }}
       >
         <input {...getInputProps()} />
-        <UploadCloudIcon
-          className="w-7 h-7 mx-auto mb-2"
-          style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
-        />
+        {isTouch ? (
+          <FingerprintIcon
+            className="w-7 h-7 mx-auto mb-2"
+            style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
+          />
+        ) : (
+          <UploadCloudIcon
+            className="w-7 h-7 mx-auto mb-2"
+            style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
+          />
+        )}
         <p className="text-sm font-medium">
-          {isDragActive ? "Drop to upload" : "Drop files here or click to browse"}
+          {isDragActive
+            ? "Drop to upload"
+            : isTouch
+            ? "Tap to browse files"
+            : "Drop files here or click to browse"}
         </p>
         <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-          {ACCEPT_HINT}
+          Images, video, audio, PDF, documents — any file up to 5 GB
         </p>
       </div>
 
       {uploads.length > 0 && (
         <div className="space-y-2">
-          {/* Aggregate header when multiple in flight */}
           {activeUploads.length > 1 && (
             <div className="flex items-center justify-between px-1">
               <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
@@ -167,7 +176,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm truncate">{u.file.name}</p>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
+                      <span className="text-xs hidden sm:block" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                         {formatBytes(u.file.size)}
                       </span>
                       {u.status === "uploading" && (
@@ -175,31 +184,23 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
                           {u.progress}%
                         </span>
                       )}
-                      {/* Retry button for errors */}
                       {u.status === "error" && (
                         <button
                           onClick={() => retryUpload(u)}
                           className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md"
                           style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
-                          title="Retry upload"
                         >
                           <RefreshCwIcon className="w-3 h-3" /> Retry
                         </button>
                       )}
-                      {/* Manual dismiss for done/error */}
                       {(u.status === "done" || u.status === "error") && (
-                        <button
-                          onClick={() => dismissUpload(u.id)}
-                          className="action-btn p-0.5 rounded"
-                          title="Dismiss"
-                        >
+                        <button onClick={() => dismissUpload(u.id)} className="action-btn p-0.5 rounded">
                           <XIcon className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Progress bar (uploading) */}
                   {u.status === "uploading" && (
                     <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
                       <div
@@ -209,7 +210,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
                     </div>
                   )}
 
-                  {/* Error message */}
                   {u.status === "error" && u.error && (
                     <p className="text-xs mt-1" style={{ color: "#ef4444" }}>{u.error}</p>
                   )}

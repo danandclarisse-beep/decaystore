@@ -1,13 +1,19 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { FileUploader } from "@/components/dashboard/FileUploader"
 import { FileGrid } from "@/components/dashboard/FileGrid"
 import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
+import { NotificationBell } from "@/components/dashboard/NotificationBell"
+import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
-import { ChevronRightIcon, HomeIcon, ArrowLeftIcon, AlertTriangleIcon, RefreshCwIcon } from "lucide-react"
+import {
+  ChevronRightIcon, HomeIcon, ArrowLeftIcon,
+  AlertTriangleIcon, RefreshCwIcon,
+} from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
 
 export default function DashboardPage() {
@@ -19,6 +25,30 @@ export default function DashboardPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState<Folder[]>([])
 
+  const router = useRouter()
+
+  // ─── Renew file handler (called from notification actions) ─────
+  const renewFileRef = useRef<((fileId: string) => Promise<void>) | null>(null)
+  const handleRenewFile = useCallback(async (fileId: string) => {
+    if (renewFileRef.current) await renewFileRef.current(fileId)
+  }, [])
+
+  // ─── Notifications ─────────────────────────────────────────────
+  const {
+    notifications,
+    unreadCount,
+    dismiss: dismissNotif,
+    dismissAll: dismissAllNotifs,
+    markAllRead,
+    pushToast,
+  } = useNotifications(
+    files,
+    user,
+    handleRenewFile,
+    () => router.push("/pricing"),
+  )
+
+  // ─── Data fetch ────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setFetchError(null)
     try {
@@ -43,10 +73,10 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // ─── Folder navigation ─────────────────────────────────────────
   function openFolder(folder: Folder) {
     setCurrentFolderId(folder.id)
     setFolderPath((prev) => {
-      // Avoid duplicates if already in path
       const existing = prev.findIndex((f) => f.id === folder.id)
       if (existing !== -1) return prev.slice(0, existing + 1)
       return [...prev, folder]
@@ -64,7 +94,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Sidebar navigate keeps breadcrumb in sync
   function handleSidebarNavigate(folderId: string | null) {
     if (folderId === null) {
       setCurrentFolderId(null)
@@ -72,7 +101,6 @@ export default function DashboardPage() {
     } else {
       const folder = folders.find((f) => f.id === folderId)
       if (folder) {
-        // Check if already in path
         const existing = folderPath.findIndex((f) => f.id === folderId)
         if (existing !== -1) {
           setCurrentFolderId(folderId)
@@ -85,19 +113,25 @@ export default function DashboardPage() {
     }
   }
 
-  const storageLimit = user ? PLAN_STORAGE_LIMITS[user.plan] : PLAN_STORAGE_LIMITS.free
-  const storageUsed  = user?.storageUsedBytes ?? 0
-  const fileLimit    = user ? (PLANS[user.plan as keyof typeof PLANS]?.maxFiles ?? 10) : 10
-
+  const storageLimit   = user ? PLAN_STORAGE_LIMITS[user.plan] : PLAN_STORAGE_LIMITS.free
+  const storageUsed    = user?.storageUsedBytes ?? 0
+  const fileLimit      = user ? (PLANS[user.plan as keyof typeof PLANS]?.maxFiles ?? 10) : 10
   const visibleFiles   = files.filter((f) => (f.folderId ?? null) === currentFolderId)
   const visibleFolders = folders.filter((f) => (f.parentId ?? null) === currentFolderId)
 
   return (
     <div style={{ background: "var(--bg)", minHeight: "100vh" }}>
-      <DashboardHeader user={user} />
+      <DashboardHeader
+        user={user}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onDismissNotif={dismissNotif}
+        onDismissAllNotifs={dismissAllNotifs}
+        onMarkAllRead={markAllRead}
+      />
 
-      <div className="max-w-7xl mx-auto px-6 py-6 flex gap-6">
-        {/* Sidebar */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex gap-4 sm:gap-6">
+        {/* Sidebar — hidden on mobile (drawer handled inside FolderSidebar) */}
         <FolderSidebar
           folders={folders}
           currentFolderId={currentFolderId}
@@ -106,7 +140,7 @@ export default function DashboardPage() {
         />
 
         {/* Main content */}
-        <main className="flex-1 min-w-0 space-y-5">
+        <main className="flex-1 min-w-0 space-y-4 sm:space-y-5">
           {/* Storage */}
           <StorageBar
             used={storageUsed}
@@ -117,14 +151,17 @@ export default function DashboardPage() {
             loading={loading}
           />
 
-          {/* Breadcrumb with back button */}
+          {/* Breadcrumb */}
           <nav className="flex items-center gap-1.5 text-sm flex-wrap">
-            {/* Back button — only show when inside a folder on mobile */}
             {currentFolderId && (
               <button
                 onClick={() => navigateTo(folderPath.length - 2)}
                 className="lg:hidden flex items-center gap-1 text-xs px-2 py-1 rounded-lg mr-1"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                }}
                 aria-label="Go back"
               >
                 <ArrowLeftIcon className="w-3.5 h-3.5" /> Back
@@ -143,8 +180,10 @@ export default function DashboardPage() {
                 <ChevronRightIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
                 <button
                   onClick={() => navigateTo(i)}
-                  className="transition-colors font-medium"
-                  style={{ color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)" }}
+                  className="transition-colors font-medium truncate max-w-[120px] sm:max-w-none"
+                  style={{
+                    color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)",
+                  }}
                 >
                   {folder.name}
                 </button>
@@ -152,21 +191,32 @@ export default function DashboardPage() {
             ))}
           </nav>
 
-          {/* Fetch error state */}
+          {/* Fetch error */}
           {fetchError && !loading && (
             <div
-              className="rounded-xl p-5 flex items-center gap-4"
-              style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)" }}
+              className="rounded-xl p-4 sm:p-5 flex items-center gap-4"
+              style={{
+                background: "rgba(239,68,68,0.06)",
+                border: "1px solid rgba(239,68,68,0.3)",
+              }}
             >
               <AlertTriangleIcon className="w-5 h-5 shrink-0" style={{ color: "#ef4444" }} />
-              <div className="flex-1">
-                <p className="text-sm font-medium" style={{ color: "#ef4444" }}>Failed to load your files</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{fetchError}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium" style={{ color: "#ef4444" }}>
+                  Failed to load your files
+                </p>
+                <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
+                  {fetchError}
+                </p>
               </div>
               <button
                 onClick={fetchAll}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                }}
               >
                 <RefreshCwIcon className="w-3.5 h-3.5" /> Retry
               </button>
@@ -175,17 +225,34 @@ export default function DashboardPage() {
 
           {/* Uploader */}
           <FileUploader
-            onUploadComplete={fetchAll}
+            onUploadComplete={() => {
+              fetchAll()
+              pushToast({
+                id: `upload-done-${Date.now()}`,
+                severity: "success",
+                title: "Upload complete",
+                body: "Your file was uploaded successfully.",
+                autoDismissMs: 4000,
+              })
+            }}
             plan={user?.plan ?? "free"}
             currentFolderId={currentFolderId}
           />
 
           {/* File grid */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="rounded-xl h-40 animate-pulse"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }} />
+                <div
+                  key={i}
+                  className="rounded-xl animate-pulse"
+                  style={{
+                    height: "160px",
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border)",
+                    animationDelay: `${i * 60}ms`,
+                  }}
+                />
               ))}
             </div>
           ) : (
@@ -196,10 +263,30 @@ export default function DashboardPage() {
               currentFolderId={currentFolderId}
               onRefresh={fetchAll}
               onOpenFolder={openFolder}
+              onRenewedToast={(filename) =>
+                pushToast({
+                  id: `renewed-${filename}-${Date.now()}`,
+                  severity: "success",
+                  title: "File renewed",
+                  body: `"${filename}" — decay reset to 0%.`,
+                  autoDismissMs: 3500,
+                })
+              }
+              renewFileRef={renewFileRef}
             />
           )}
         </main>
       </div>
+
+      {/* Mobile floating notification FAB */}
+      <NotificationBell
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onDismiss={dismissNotif}
+        onDismissAll={dismissAllNotifs}
+        onMarkAllRead={markAllRead}
+        variant="float"
+      />
     </div>
   )
 }

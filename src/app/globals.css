@@ -70,7 +70,6 @@
 }
 
 @layer components {
-  /* Navigation link */
   .nav-link {
     color: var(--text-muted);
   }
@@ -78,7 +77,6 @@
     color: var(--text);
   }
 
-  /* Ghost button (bordered, no bg) */
   .btn-ghost {
     color: var(--text-muted);
     border: 1px solid var(--border);
@@ -90,7 +88,6 @@
     border-color: var(--border);
   }
 
-  /* Accent button (amber fill) */
   .btn-accent {
     background: var(--accent);
     color: #000;
@@ -100,7 +97,6 @@
     opacity: 0.88;
   }
 
-  /* Outline button */
   .btn-outline {
     color: var(--text-muted);
     border: 1px solid var(--border);
@@ -111,7 +107,6 @@
     color: var(--text);
   }
 
-  /* Card hover */
   .card-hover {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -122,7 +117,6 @@
     background: var(--bg-hover);
   }
 
-  /* Footer link */
   .footer-link {
     color: var(--text-muted);
     font-size: 0.875rem;
@@ -132,7 +126,6 @@
     color: var(--text);
   }
 
-  /* Dashboard action button */
   .action-btn {
     color: var(--text-muted);
     background: transparent;
@@ -178,10 +171,10 @@
   }
 
   .animate-fade-in {
-    animation: fadeIn 0.4s ease forwards;
+    animation: fadeIn 0.25s ease forwards;
   }
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
   }
 
@@ -191,5 +184,30 @@
   @keyframes pulseSlow {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.5; }
+  }
+
+  /* Bell wiggle for critical notifications */
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    15%       { transform: rotate(-12deg); }
+    30%       { transform: rotate(12deg); }
+    45%       { transform: rotate(-8deg); }
+    60%       { transform: rotate(8deg); }
+    75%       { transform: rotate(-4deg); }
+    90%       { transform: rotate(4deg); }
+  }
+
+  /* Slide-in for notification panel */
+  .animate-slide-down {
+    animation: slideDown 0.2s ease forwards;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Safe area for mobile bottom nav */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

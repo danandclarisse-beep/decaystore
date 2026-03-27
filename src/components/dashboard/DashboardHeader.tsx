@@ -3,22 +3,42 @@
 import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
 import { useState } from "react"
-import { Loader2Icon, AlertCircleIcon, XIcon } from "lucide-react"
+import {
+  Loader2Icon, AlertCircleIcon, XIcon,
+  MoreHorizontalIcon, CreditCardIcon, ZapIcon,
+} from "lucide-react"
+import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import type { User } from "@/lib/db/schema"
+import type { Notification } from "@/hooks/useNotifications"
 
 interface Props {
   user: User | null
+  notifications: Notification[]
+  unreadCount: number
+  onDismissNotif: (id: string) => void
+  onDismissAllNotifs: () => void
+  onMarkAllRead: () => void
+  onRenewFile?: (fileId: string) => void
 }
 
-export function DashboardHeader({ user }: Props) {
+export function DashboardHeader({
+  user,
+  notifications,
+  unreadCount,
+  onDismissNotif,
+  onDismissAllNotifs,
+  onMarkAllRead,
+}: Props) {
   const [portalLoading, setPortalLoading] = useState(false)
   const [portalError, setPortalError]     = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   async function openBillingPortal() {
     setPortalLoading(true)
     setPortalError(null)
+    setMobileMenuOpen(false)
     try {
-      const res = await fetch("/api/stripe/portal", { method: "POST" })
+      const res  = await fetch("/api/stripe/portal", { method: "POST" })
       const data = await res.json()
       if (data.url) {
         window.location.href = data.url
@@ -38,10 +58,8 @@ export function DashboardHeader({ user }: Props) {
     pro:     { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)" },
   }[user?.plan ?? "free"]
 
-  // Extract first name from display name or email
   const firstName = user
     ? (() => {
-        // Clerk users may have a name embedded; fall back to email prefix
         const email = (user as unknown as { email?: string }).email
         if (email) return email.split("@")[0].split(".")[0]
         return null
@@ -51,51 +69,164 @@ export function DashboardHeader({ user }: Props) {
   return (
     <>
       <header
-        style={{ background: "rgba(10,10,11,0.9)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border-subtle)" }}
-        className="sticky top-0 z-10"
+        style={{
+          background: "rgba(10,10,11,0.9)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid var(--border-subtle)",
+        }}
+        className="sticky top-0 z-30"
       >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-                style={{ background: "var(--accent)", color: "#000" }}>D</span>
-              <span className="font-bold text-base" style={{ fontFamily: "Syne, sans-serif" }}>DecayStore</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
+          {/* Left — logo + plan badge */}
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/" className="flex items-center gap-2.5 shrink-0">
+              <span
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+                style={{ background: "var(--accent)", color: "#000" }}
+              >
+                D
+              </span>
+              <span
+                className="font-bold text-base hidden sm:block"
+                style={{ fontFamily: "Syne, sans-serif" }}
+              >
+                DecayStore
+              </span>
             </Link>
             {user && (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize"
-                style={{ background: planBadge.bg, color: planBadge.color, fontFamily: "DM Mono, monospace" }}>
+              <span
+                className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize shrink-0"
+                style={{
+                  background: planBadge.bg,
+                  color: planBadge.color,
+                  fontFamily: "DM Mono, monospace",
+                }}
+              >
                 {user.plan}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Right — actions */}
+          <div className="flex items-center gap-2">
+            {/* Greeting — desktop only */}
             {firstName && (
-              <span className="text-sm hidden sm:block" style={{ color: "var(--text-muted)" }}>
-                Hi, <span style={{ color: "var(--text)" }}>{firstName}</span>
+              <span className="text-sm hidden md:block" style={{ color: "var(--text-muted)" }}>
+                Hi,{" "}
+                <span style={{ color: "var(--text)" }}>{firstName}</span>
               </span>
             )}
+
+            {/* Notification bell — desktop only (mobile gets FAB) */}
+            <NotificationBell
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onDismiss={onDismissNotif}
+              onDismissAll={onDismissAllNotifs}
+              onMarkAllRead={onMarkAllRead}
+              variant="header"
+            />
+
+            {/* Upgrade button — desktop only */}
             {user?.plan === "free" && (
-              <Link href="/pricing"
-                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+              <Link
+                href="/pricing"
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1"
                 style={{ background: "var(--accent)", color: "#000" }}
                 onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}>
+                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+              >
+                <ZapIcon className="w-3 h-3" />
                 Upgrade
               </Link>
             )}
+
+            {/* Billing button — desktop only */}
             {user?.billingCustomerId && (
               <button
                 onClick={openBillingPortal}
                 disabled={portalLoading}
-                className="text-xs transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-60"
-                style={{ color: "var(--text-muted)", border: "1px solid var(--border)", background: "var(--bg-card)" }}
+                className="text-xs transition-colors px-3 py-1.5 rounded-lg items-center gap-1.5 disabled:opacity-60 hidden sm:flex"
+                style={{
+                  color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-card)",
+                }}
                 onMouseEnter={e => !portalLoading && (e.currentTarget.style.color = "var(--text)")}
-                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>
+                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+              >
                 {portalLoading && <Loader2Icon className="w-3 h-3 animate-spin" />}
                 {portalLoading ? "Loading…" : "Billing"}
               </button>
             )}
+
+            {/* Mobile overflow menu */}
+            <div className="relative sm:hidden">
+              <button
+                onClick={() => setMobileMenuOpen((o) => !o)}
+                className="flex items-center justify-center w-9 h-9 rounded-xl action-btn"
+                aria-label="More options"
+              >
+                <MoreHorizontalIcon className="w-4 h-4" />
+              </button>
+
+              {mobileMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setMobileMenuOpen(false)}
+                  />
+                  <div
+                    className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+                    style={{
+                      minWidth: 180,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border)",
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                    }}
+                  >
+                    {firstName && (
+                      <div
+                        className="px-4 py-2.5 text-xs"
+                        style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}
+                      >
+                        Signed in as <span style={{ color: "var(--text)" }}>{firstName}</span>
+                      </div>
+                    )}
+                    {user?.plan === "free" && (
+                      <Link
+                        href="/pricing"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors"
+                        style={{ color: "var(--accent)" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <ZapIcon className="w-4 h-4" />
+                        Upgrade plan
+                      </Link>
+                    )}
+                    {user?.billingCustomerId && (
+                      <button
+                        onClick={openBillingPortal}
+                        disabled={portalLoading}
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full text-left transition-colors disabled:opacity-50"
+                        style={{ color: "var(--text)" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        {portalLoading
+                          ? <Loader2Icon className="w-4 h-4 animate-spin" />
+                          : <CreditCardIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                        }
+                        {portalLoading ? "Opening…" : "Billing"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
             <UserButton afterSignOutUrl="/" />
           </div>
         </div>
@@ -104,12 +235,18 @@ export function DashboardHeader({ user }: Props) {
       {/* Billing error toast */}
       {portalError && (
         <div
-          className="fixed top-20 right-4 z-50 flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl"
-          style={{ background: "var(--bg-elevated)", border: "1px solid rgba(239,68,68,0.4)" }}
+          className="fixed top-20 right-4 z-50 flex items-start gap-3 rounded-xl px-4 py-3 max-w-sm shadow-xl animate-fade-in"
+          style={{
+            background: "var(--bg-elevated)",
+            border: "1px solid rgba(239,68,68,0.4)",
+          }}
         >
           <AlertCircleIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
           <p className="text-xs flex-1" style={{ color: "var(--text)" }}>{portalError}</p>
-          <button onClick={() => setPortalError(null)} className="action-btn p-0.5 rounded shrink-0">
+          <button
+            onClick={() => setPortalError(null)}
+            className="action-btn p-0.5 rounded shrink-0"
+          >
             <XIcon className="w-3.5 h-3.5" />
           </button>
         </div>
