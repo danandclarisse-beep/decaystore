@@ -4,8 +4,12 @@ import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
 import { useState } from "react"
 import {
-  Loader2Icon, AlertCircleIcon, XIcon,
-  MoreHorizontalIcon, CreditCardIcon, ZapIcon,
+  Loader2Icon,
+  AlertCircleIcon,
+  XIcon,
+  MoreHorizontalIcon,
+  CreditCardIcon,
+  ZapIcon,
 } from "lucide-react"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import type { User } from "@/lib/db/schema"
@@ -18,7 +22,6 @@ interface Props {
   onDismissNotif: (id: string) => void
   onDismissAllNotifs: () => void
   onMarkAllRead: () => void
-  onRenewFile?: (fileId: string) => void
 }
 
 export function DashboardHeader({
@@ -30,16 +33,18 @@ export function DashboardHeader({
   onMarkAllRead,
 }: Props) {
   const [portalLoading, setPortalLoading] = useState(false)
-  const [portalError, setPortalError]     = useState<string | null>(null)
+  const [portalError, setPortalError] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   async function openBillingPortal() {
     setPortalLoading(true)
     setPortalError(null)
     setMobileMenuOpen(false)
+
     try {
-      const res  = await fetch("/api/stripe/portal", { method: "POST" })
+      const res = await fetch("/api/stripe/portal", { method: "POST" })
       const data = await res.json()
+
       if (data.url) {
         window.location.href = data.url
       } else {
@@ -53,9 +58,9 @@ export function DashboardHeader({
   }
 
   const planBadge = {
-    free:    { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
-    starter: { bg: "rgba(59,130,246,0.12)",  color: "#60a5fa" },
-    pro:     { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)" },
+    free: { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
+    starter: { bg: "rgba(59,130,246,0.12)", color: "#60a5fa" },
+    pro: { bg: "rgba(245,166,35,0.12)", color: "var(--accent)" },
   }[user?.plan ?? "free"]
 
   const firstName = user
@@ -79,7 +84,10 @@ export function DashboardHeader({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
           {/* Left — logo + plan badge */}
           <div className="flex items-center gap-3 min-w-0">
-            <Link href="/" className="flex items-center gap-2.5 shrink-0">
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity"
+            >
               <span
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
                 style={{ background: "var(--accent)", color: "#000" }}
@@ -93,6 +101,7 @@ export function DashboardHeader({
                 DecayStore
               </span>
             </Link>
+
             {user && (
               <span
                 className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize shrink-0"
@@ -112,12 +121,11 @@ export function DashboardHeader({
             {/* Greeting — desktop only */}
             {firstName && (
               <span className="text-sm hidden md:block" style={{ color: "var(--text-muted)" }}>
-                Hi,{" "}
-                <span style={{ color: "var(--text)" }}>{firstName}</span>
+                Hi, <span style={{ color: "var(--text)" }}>{firstName}</span>
               </span>
             )}
 
-            {/* Notification bell — desktop only (mobile gets FAB) */}
+            {/* Notification bell */}
             <NotificationBell
               notifications={notifications}
               unreadCount={unreadCount}
@@ -131,10 +139,8 @@ export function DashboardHeader({
             {user?.plan === "free" && (
               <Link
                 href="/pricing"
-                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1"
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1.5 hover:opacity-85 active:opacity-75"
                 style={{ background: "var(--accent)", color: "#000" }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
               >
                 <ZapIcon className="w-3 h-3" />
                 Upgrade
@@ -146,14 +152,12 @@ export function DashboardHeader({
               <button
                 onClick={openBillingPortal}
                 disabled={portalLoading}
-                className="text-xs transition-colors px-3 py-1.5 rounded-lg items-center gap-1.5 disabled:opacity-60 hidden sm:flex"
+                className="text-xs px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-1.5 disabled:opacity-60 transition-all hover:text-[var(--text)] hover:border-[var(--text-muted)] active:bg-[var(--bg-hover)]"
                 style={{
                   color: "var(--text-muted)",
                   border: "1px solid var(--border)",
                   background: "var(--bg-card)",
                 }}
-                onMouseEnter={e => !portalLoading && (e.currentTarget.style.color = "var(--text)")}
-                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
               >
                 {portalLoading && <Loader2Icon className="w-3 h-3 animate-spin" />}
                 {portalLoading ? "Loading…" : "Billing"}
@@ -164,7 +168,7 @@ export function DashboardHeader({
             <div className="relative sm:hidden">
               <button
                 onClick={() => setMobileMenuOpen((o) => !o)}
-                className="flex items-center justify-center w-9 h-9 rounded-xl action-btn"
+                className="flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[var(--bg-hover)] transition-colors"
                 aria-label="More options"
               >
                 <MoreHorizontalIcon className="w-4 h-4" />
@@ -177,7 +181,7 @@ export function DashboardHeader({
                     onClick={() => setMobileMenuOpen(false)}
                   />
                   <div
-                    className="absolute right-0 top-full mt-2 z-50 rounded-xl overflow-hidden"
+                    className="absolute right-0 top-full mt-2 z-50 rounded-xl overflow-hidden py-1"
                     style={{
                       minWidth: 180,
                       background: "var(--bg-elevated)",
@@ -187,38 +191,40 @@ export function DashboardHeader({
                   >
                     {firstName && (
                       <div
-                        className="px-4 py-2.5 text-xs"
-                        style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}
+                        className="px-4 py-2.5 text-xs border-b"
+                        style={{
+                          color: "var(--text-muted)",
+                          borderColor: "var(--border-subtle)",
+                        }}
                       >
-                        Signed in as <span style={{ color: "var(--text)" }}>{firstName}</span>
+                        Signed in as{" "}
+                        <span style={{ color: "var(--text)" }}>{firstName}</span>
                       </div>
                     )}
+
                     {user?.plan === "free" && (
                       <Link
                         href="/pricing"
                         onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors"
-                        style={{ color: "var(--accent)" }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors hover:bg-[var(--bg-hover)] text-[var(--accent)]"
                       >
                         <ZapIcon className="w-4 h-4" />
                         Upgrade plan
                       </Link>
                     )}
+
                     {user?.billingCustomerId && (
                       <button
                         onClick={openBillingPortal}
                         disabled={portalLoading}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full text-left transition-colors disabled:opacity-50"
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full text-left transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
                         style={{ color: "var(--text)" }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        {portalLoading
-                          ? <Loader2Icon className="w-4 h-4 animate-spin" />
-                          : <CreditCardIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
-                        }
+                        {portalLoading ? (
+                          <Loader2Icon className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CreditCardIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                        )}
                         {portalLoading ? "Opening…" : "Billing"}
                       </button>
                     )}
@@ -242,10 +248,12 @@ export function DashboardHeader({
           }}
         >
           <AlertCircleIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
-          <p className="text-xs flex-1" style={{ color: "var(--text)" }}>{portalError}</p>
+          <p className="text-xs flex-1" style={{ color: "var(--text)" }}>
+            {portalError}
+          </p>
           <button
             onClick={() => setPortalError(null)}
-            className="action-btn p-0.5 rounded shrink-0"
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors"
           >
             <XIcon className="w-3.5 h-3.5" />
           </button>
