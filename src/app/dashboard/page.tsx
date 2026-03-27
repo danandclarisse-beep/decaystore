@@ -1,34 +1,48 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { useUser } from "@clerk/nextjs"
 import { FileUploader } from "@/components/dashboard/FileUploader"
 import { FileGrid } from "@/components/dashboard/FileGrid"
 import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
 import { PLAN_STORAGE_LIMITS } from "@/lib/plans"
+import { ChevronRightIcon, HomeIcon, ArrowLeftIcon, AlertTriangleIcon, RefreshCwIcon } from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
+
+// Per-plan file count limits — adjust to match your plans.ts if needed
+const PLAN_FILE_LIMITS: Record<string, number> = {
+  free:    100,
+  starter: 1_000,
+  pro:     10_000,
+}
 
 export default function DashboardPage() {
   const [files, setFiles]           = useState<File[]>([])
   const [folders, setFolders]       = useState<Folder[]>([])
   const [user, setUser]             = useState<User | null>(null)
   const [loading, setLoading]       = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
-  const [folderPath, setFolderPath] = useState<Folder[]>([]) // breadcrumb trail
+  const [folderPath, setFolderPath] = useState<Folder[]>([])
 
   const fetchAll = useCallback(async () => {
+    setFetchError(null)
     try {
       const [filesRes, foldersRes] = await Promise.all([
         fetch("/api/files"),
         fetch("/api/folders"),
       ])
+      if (!filesRes.ok || !foldersRes.ok) {
+        throw new Error(`Server error (${filesRes.status})`)
+      }
       const filesData   = await filesRes.json()
       const foldersData = await foldersRes.json()
       setFiles(filesData.files ?? [])
       setUser(filesData.user ?? null)
       setFolders(foldersData.folders ?? [])
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Failed to load dashboard")
     } finally {
       setLoading(false)
     }
@@ -36,13 +50,16 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Navigate into a folder
   function openFolder(folder: Folder) {
     setCurrentFolderId(folder.id)
-    setFolderPath((prev) => [...prev, folder])
+    setFolderPath((prev) => {
+      // Avoid duplicates if already in path
+      const existing = prev.findIndex((f) => f.id === folder.id)
+      if (existing !== -1) return prev.slice(0, existing + 1)
+      return [...prev, folder]
+    })
   }
 
-  // Navigate via breadcrumb
   function navigateTo(index: number) {
     if (index === -1) {
       setCurrentFolderId(null)
@@ -54,10 +71,31 @@ export default function DashboardPage() {
     }
   }
 
+  // Sidebar navigate keeps breadcrumb in sync
+  function handleSidebarNavigate(folderId: string | null) {
+    if (folderId === null) {
+      setCurrentFolderId(null)
+      setFolderPath([])
+    } else {
+      const folder = folders.find((f) => f.id === folderId)
+      if (folder) {
+        // Check if already in path
+        const existing = folderPath.findIndex((f) => f.id === folderId)
+        if (existing !== -1) {
+          setCurrentFolderId(folderId)
+          setFolderPath(folderPath.slice(0, existing + 1))
+        } else {
+          setCurrentFolderId(folderId)
+          setFolderPath([folder])
+        }
+      }
+    }
+  }
+
   const storageLimit = user ? PLAN_STORAGE_LIMITS[user.plan] : PLAN_STORAGE_LIMITS.free
   const storageUsed  = user?.storageUsedBytes ?? 0
+  const fileLimit    = user ? (PLAN_FILE_LIMITS[user.plan] ?? 100) : 100
 
-  // Filter files and folders to current folder
   const visibleFiles   = files.filter((f) => (f.folderId ?? null) === currentFolderId)
   const visibleFolders = folders.filter((f) => (f.parentId ?? null) === currentFolderId)
 
@@ -70,35 +108,46 @@ export default function DashboardPage() {
         <FolderSidebar
           folders={folders}
           currentFolderId={currentFolderId}
-          onNavigate={(folderId) => {
-            if (folderId === null) {
-              setCurrentFolderId(null)
-              setFolderPath([])
-            } else {
-              const folder = folders.find((f) => f.id === folderId)
-              if (folder) openFolder(folder)
-            }
-          }}
+          onNavigate={handleSidebarNavigate}
           onRefresh={fetchAll}
         />
 
         {/* Main content */}
         <main className="flex-1 min-w-0 space-y-5">
           {/* Storage */}
-          <StorageBar used={storageUsed} limit={storageLimit} plan={user?.plan ?? "free"} />
+          <StorageBar
+            used={storageUsed}
+            limit={storageLimit}
+            plan={user?.plan ?? "free"}
+            fileCount={files.length}
+            fileLimit={fileLimit}
+            loading={loading}
+          />
 
-          {/* Breadcrumb */}
+          {/* Breadcrumb with back button */}
           <nav className="flex items-center gap-1.5 text-sm flex-wrap">
+            {/* Back button — only show when inside a folder on mobile */}
+            {currentFolderId && (
+              <button
+                onClick={() => navigateTo(folderPath.length - 2)}
+                className="lg:hidden flex items-center gap-1 text-xs px-2 py-1 rounded-lg mr-1"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+                aria-label="Go back"
+              >
+                <ArrowLeftIcon className="w-3.5 h-3.5" /> Back
+              </button>
+            )}
             <button
               onClick={() => navigateTo(-1)}
-              className="transition-colors font-medium"
+              className="flex items-center gap-1.5 transition-colors font-medium"
               style={{ color: currentFolderId ? "var(--text-muted)" : "var(--text)" }}
             >
+              <HomeIcon className="w-3.5 h-3.5" />
               My Files
             </button>
             {folderPath.map((folder, i) => (
               <span key={folder.id} className="flex items-center gap-1.5">
-                <span style={{ color: "var(--text-dim)" }}>/</span>
+                <ChevronRightIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
                 <button
                   onClick={() => navigateTo(i)}
                   className="transition-colors font-medium"
@@ -109,6 +158,27 @@ export default function DashboardPage() {
               </span>
             ))}
           </nav>
+
+          {/* Fetch error state */}
+          {fetchError && !loading && (
+            <div
+              className="rounded-xl p-5 flex items-center gap-4"
+              style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)" }}
+            >
+              <AlertTriangleIcon className="w-5 h-5 shrink-0" style={{ color: "#ef4444" }} />
+              <div className="flex-1">
+                <p className="text-sm font-medium" style={{ color: "#ef4444" }}>Failed to load your files</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{fetchError}</p>
+              </div>
+              <button
+                onClick={fetchAll}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+              >
+                <RefreshCwIcon className="w-3.5 h-3.5" /> Retry
+              </button>
+            </div>
+          )}
 
           {/* Uploader */}
           <FileUploader
@@ -121,11 +191,8 @@ export default function DashboardPage() {
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl h-40 animate-pulse"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-                />
+                <div key={i} className="rounded-xl h-40 animate-pulse"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }} />
               ))}
             </div>
           ) : (

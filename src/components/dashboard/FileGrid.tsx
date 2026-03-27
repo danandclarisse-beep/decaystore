@@ -5,6 +5,7 @@ import {
   RefreshCwIcon, Trash2Icon, DownloadIcon, ClockIcon,
   FolderIcon, PencilIcon, FolderInputIcon, GitBranchIcon,
   UploadIcon, XIcon, ChevronDownIcon, EyeIcon, MoreHorizontalIcon,
+  AlertTriangleIcon, CheckIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, getMimeTypeIcon } from "@/lib/utils"
 import { getDecayColor, getDecayLabel, getDaysUntilDeletion } from "@/lib/decay-utils"
@@ -19,94 +20,67 @@ interface Props {
   onOpenFolder: (folder: Folder) => void
 }
 
+type ActionKey = string
+
 export function FileGrid({ files, folders, allFolders, currentFolderId, onRefresh, onOpenFolder }: Props) {
-  // localFiles mirrors the files prop but allows instant optimistic updates
-  // (e.g. rename) without waiting for a full server refresh.
-  const [localFiles, setLocalFiles] = useState<File[]>(files)
-  // Keep localFiles in sync when the parent refreshes after onRefresh()
+  const [localFiles, setLocalFiles]           = useState<File[]>(files)
   useEffect(() => { setLocalFiles(files) }, [files])
-  const [actionLoading, setActionLoading]   = useState<string | null>(null)
-  const [renamingId, setRenamingId]         = useState<string | null>(null)
-  const [renameValue, setRenameValue]       = useState("")
-  const [renameError, setRenameError]       = useState<string | null>(null)
-  const [movingFile, setMovingFile]         = useState<File | null>(null)
-  const [versionsFile, setVersionsFile]     = useState<File | null>(null)
-  const [versions, setVersions]             = useState<FileVersion[]>([])
+
+  const [loadingKeys, setLoadingKeys]         = useState<Set<ActionKey>>(new Set())
+  const [renamingId, setRenamingId]           = useState<string | null>(null)
+  const [renameValue, setRenameValue]         = useState("")
+  const [renameError, setRenameError]         = useState<string | null>(null)
+  const [movingFile, setMovingFile]           = useState<File | null>(null)
+  const [versionsFile, setVersionsFile]       = useState<File | null>(null)
+  const [versions, setVersions]               = useState<FileVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
-  const [newVersionFile, setNewVersionFile] = useState<File | null>(null)
   const [uploadingVersion, setUploadingVersion] = useState(false)
-  const [previewFile, setPreviewFile]       = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl]         = useState<string | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
+  const [versionProgress, setVersionProgress] = useState(0)
+  const [previewFile, setPreviewFile]         = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl]           = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading]   = useState(false)
   const [openMenuId, setOpenMenuId]           = useState<string | null>(null)
-  // Suppress onBlur firing rename immediately after double-click opens the input
+  const [confirmState, setConfirmState]       = useState<{ id: string; action: "delete" | "deleteVersion"; versionId?: string } | null>(null)
   const renameFreshRef = useRef(false)
 
-  // ── Rename ──────────────────────────────────────────────
+  function startLoading(key: ActionKey) { setLoadingKeys((p) => new Set(p).add(key)) }
+  function stopLoading(key: ActionKey)  { setLoadingKeys((p) => { const s = new Set(p); s.delete(key); return s }) }
+  function isLoading(key: ActionKey)    { return loadingKeys.has(key) }
+
   async function handleRename(fileId: string) {
     const trimmed = renameValue.trim()
     if (!trimmed) { setRenamingId(null); return }
-
-    // Optimistically close the input immediately — no waiting for the network.
-    // The rename is metadata-only so the UI can update before the API confirms.
-    setRenamingId(null)
-    setRenameError(null)
-
-    // Patch the file name in local state instantly so the card reflects the
-    // new name without waiting for a full refresh.
-    setLocalFiles((prev) =>
-      prev.map((f) => f.id === fileId ? { ...f, originalFilename: trimmed } : f)
-    )
-
+    setRenamingId(null); setRenameError(null)
+    setLocalFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, originalFilename: trimmed } : f))
     const res = await fetch(`/api/files/${fileId}/rename`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: trimmed }),
     })
     const data = await res.json()
     if (!res.ok) {
-      // Revert the optimistic update and re-open the input with the error
-      setLocalFiles((prev) =>
-        prev.map((f) => f.id === fileId ? { ...f, originalFilename: f.originalFilename } : f)
-      )
-      onRefresh() // pull the real server state
-      setRenameError(data.error ?? "Rename failed")
-      setRenamingId(fileId)
-      setRenameValue(trimmed)
-    }
-    // On success, do a quiet background refresh to sync any other fields
-    else { onRefresh() }
+      onRefresh(); setRenameError(data.error ?? "Rename failed")
+      setRenamingId(fileId); setRenameValue(trimmed)
+    } else { onRefresh() }
   }
 
   function startRename(file: File) {
     renameFreshRef.current = true
-    setRenameError(null)
-    setRenamingId(file.id)
-    setRenameValue(file.originalFilename)
+    setRenameError(null); setRenamingId(file.id); setRenameValue(file.originalFilename)
   }
 
-  // ── Move ────────────────────────────────────────────────
   async function handleMove(fileId: string, folderId: string | null) {
-    setActionLoading(fileId + "-move")
+    const key = fileId + "-move"; startLoading(key)
     try {
       await fetch(`/api/files/${fileId}/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folderId }),
       })
-      setMovingFile(null)
-      onRefresh()
-    } finally {
-      setActionLoading(null)
-    }
+      setMovingFile(null); onRefresh()
+    } finally { stopLoading(key) }
   }
 
-  // ── Download ────────────────────────────────────────────
-  // Fetch the blob via the presigned URL so the browser treats it as a
-  // download rather than navigating to it (R2 presigned URLs don't carry
-  // Content-Disposition: attachment by default).
   async function handleDownload(fileId: string, filename: string) {
-    setActionLoading(fileId + "-download")
+    const key = fileId + "-download"; startLoading(key)
     try {
       const res  = await fetch(`/api/files/${fileId}`)
       const data = await res.json()
@@ -114,125 +88,93 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
         const blob = await fetch(data.downloadUrl).then((r) => r.blob())
         const url  = URL.createObjectURL(blob)
         const a    = document.createElement("a")
-        a.href     = url
-        a.download = filename
-        a.click()
+        a.href = url; a.download = filename; a.click()
         setTimeout(() => URL.revokeObjectURL(url), 10_000)
         onRefresh()
       }
-    } finally {
-      setActionLoading(null)
-    }
+    } finally { stopLoading(key) }
   }
 
-  // ── Preview ─────────────────────────────────────────────
   async function handlePreview(file: File) {
-    setPreviewFile(file)
-    setPreviewUrl(null)
-    setPreviewLoading(true)
+    setPreviewFile(file); setPreviewUrl(null); setPreviewLoading(true)
     try {
       const res  = await fetch(`/api/files/${file.id}`)
       const data = await res.json()
       if (data.downloadUrl) setPreviewUrl(data.downloadUrl)
-    } finally {
-      setPreviewLoading(false)
-    }
+    } finally { setPreviewLoading(false) }
   }
 
-  // ── Renew ───────────────────────────────────────────────
   async function handleRenew(fileId: string) {
-    setActionLoading(fileId + "-renew")
-    try {
-      await fetch(`/api/files/${fileId}`, { method: "PATCH" })
-      onRefresh()
-    } finally {
-      setActionLoading(null)
-    }
+    const key = fileId + "-renew"; startLoading(key)
+    try { await fetch(`/api/files/${fileId}`, { method: "PATCH" }); onRefresh() }
+    finally { stopLoading(key) }
   }
 
-  // ── Delete ──────────────────────────────────────────────
   async function handleDelete(fileId: string) {
-    if (!confirm("Permanently delete this file? This cannot be undone.")) return
-    setActionLoading(fileId + "-delete")
-    try {
-      await fetch(`/api/files/${fileId}`, { method: "DELETE" })
-      onRefresh()
-    } finally {
-      setActionLoading(null)
-    }
+    const key = fileId + "-delete"; startLoading(key); setConfirmState(null)
+    try { await fetch(`/api/files/${fileId}`, { method: "DELETE" }); onRefresh() }
+    finally { stopLoading(key) }
   }
 
-  // ── Versions ────────────────────────────────────────────
   async function openVersions(file: File) {
-    setVersionsFile(file)
-    setVersionsLoading(true)
+    setVersionsFile(file); setVersionsLoading(true)
     try {
       const res  = await fetch(`/api/files/${file.id}/versions`)
       const data = await res.json()
       setVersions(data.versions ?? [])
-    } finally {
-      setVersionsLoading(false)
-    }
+    } finally { setVersionsLoading(false) }
   }
 
   async function downloadVersion(fileId: string, versionId: string, filename: string) {
     const res  = await fetch(`/api/files/${fileId}/versions/${versionId}`)
     const data = await res.json()
     if (data.downloadUrl) {
-      const a = document.createElement("a")
-      a.href = data.downloadUrl
-      a.download = filename
-      a.click()
+      const a = document.createElement("a"); a.href = data.downloadUrl; a.download = filename; a.click()
     }
   }
 
-  async function deleteVersion(fileId: string, versionId: string) {
-    if (!confirm("Delete this version? This cannot be undone.")) return
+  async function handleDeleteVersion(fileId: string, versionId: string) {
+    setConfirmState(null)
     await fetch(`/api/files/${fileId}/versions/${versionId}`, { method: "DELETE" })
     if (versionsFile) openVersions(versionsFile)
     onRefresh()
   }
 
-  // ── Upload new version ──────────────────────────────────
   async function handleNewVersionUpload(file: File, selectedFile: globalThis.File) {
-    setUploadingVersion(true)
+    setUploadingVersion(true); setVersionProgress(0)
     try {
       const metaRes = await fetch(`/api/files/${file.id}/versions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          contentType: selectedFile.type || "application/octet-stream",
-          sizeBytes: selectedFile.size,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selectedFile.name, contentType: selectedFile.type || "application/octet-stream", sizeBytes: selectedFile.size }),
       })
       if (!metaRes.ok) throw new Error((await metaRes.json()).error)
       const { uploadUrl } = await metaRes.json()
-      await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": selectedFile.type || "application/octet-stream" },
-        body: selectedFile,
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setVersionProgress(Math.round((e.loaded / e.total) * 100)) }
+        xhr.onload = () => xhr.status < 400 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`))
+        xhr.onerror = () => reject(new Error("Network error"))
+        xhr.open("PUT", uploadUrl)
+        xhr.setRequestHeader("Content-Type", selectedFile.type || "application/octet-stream")
+        xhr.send(selectedFile)
       })
-      setNewVersionFile(null)
       if (versionsFile?.id === file.id) openVersions(file)
       onRefresh()
-    } finally {
-      setUploadingVersion(false)
-    }
+    } finally { setUploadingVersion(false); setVersionProgress(0) }
   }
 
   const sorted = [...localFiles].sort((a, b) => b.decayScore - a.decayScore)
 
   if (folders.length === 0 && files.length === 0) {
     return (
-      <div
-        className="rounded-xl py-20 text-center"
-        style={{ background: "var(--bg-card)", border: "1px dashed var(--border)" }}
-      >
-        <p className="text-4xl mb-4">📁</p>
-        <p className="text-sm font-medium mb-1">No files here</p>
+      <div className="rounded-xl py-20 text-center" style={{ background: "var(--bg-card)", border: "1px dashed var(--border)" }}>
+        <div className="w-12 h-12 rounded-xl mx-auto mb-4 flex items-center justify-center"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+          <FolderIcon className="w-6 h-6" style={{ color: "var(--text-dim)" }} />
+        </div>
+        <p className="text-sm font-medium mb-1">{currentFolderId ? "This folder is empty" : "No files yet"}</p>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Drop a file above or create a folder in the sidebar.
+          {currentFolderId ? "Upload files here or move existing files into this folder." : "Drop a file above or create a folder in the sidebar."}
         </p>
       </div>
     )
@@ -240,106 +182,79 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
 
   return (
     <>
-      {/* Toolbar */}
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
           {folders.length > 0 && `${folders.length} folder${folders.length !== 1 ? "s" : ""}  · `}
           {files.length} file{files.length !== 1 ? "s" : ""}
         </p>
-        <button
-          onClick={onRefresh}
-          className="action-btn text-xs flex items-center gap-1.5 px-3 py-1.5"
-          style={{ border: "1px solid var(--border)", borderRadius: "8px" }}
-        >
+        <button onClick={onRefresh} className="action-btn text-xs flex items-center gap-1.5 px-3 py-1.5"
+          style={{ border: "1px solid var(--border)", borderRadius: "8px" }}>
           <RefreshCwIcon className="w-3 h-3" /> Refresh
         </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-
-        {/* ── Folder cards ────────────────────────────── */}
         {folders.map((folder) => (
-          <button
-            key={folder.id}
-            onClick={() => onOpenFolder(folder)}
+          <button key={folder.id} onClick={() => onOpenFolder(folder)}
             className="rounded-xl p-5 text-left transition-all group"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-          >
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <div className="flex items-center gap-3">
               <FolderIcon className="w-8 h-8 shrink-0" style={{ color: "var(--accent)" }} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{folder.name}</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                  Folder · {formatRelativeTime(folder.createdAt)}
-                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Folder · {formatRelativeTime(folder.createdAt)}</p>
               </div>
-              <ChevronDownIcon
-                className="w-4 h-4 -rotate-90 shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ color: "var(--text-dim)" }}
-              />
+              <ChevronDownIcon className="w-4 h-4 -rotate-90 shrink-0 transition-transform group-hover:translate-x-0.5" style={{ color: "var(--text-dim)" }} />
             </div>
           </button>
         ))}
 
-        {/* ── File cards ──────────────────────────────── */}
         {sorted.map((file) => {
-          const decayColor = getDecayColor(file.decayScore)
-          const decayLabel = getDecayLabel(file.decayScore)
-          const daysLeft   = getDaysUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)
-          const isCritical = file.decayScore >= 0.75
-          const isExpiring = file.decayScore >= 0.9
-          const isRenaming = renamingId === file.id
+          const decayColor   = getDecayColor(file.decayScore)
+          const decayLabel   = getDecayLabel(file.decayScore)
+          const daysLeft     = getDaysUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)
+          const isCritical   = file.decayScore >= 0.75
+          const isExpiring   = file.decayScore >= 0.9
+          const isRenaming   = renamingId === file.id
+          const isDeleting   = isLoading(file.id + "-delete")
+          const isDownloading = isLoading(file.id + "-download")
+          const isRenewing   = isLoading(file.id + "-renew")
+          const isConfirmingDelete = confirmState?.id === file.id && confirmState.action === "delete"
 
           return (
-            <div
-              key={file.id}
-              className="rounded-xl p-5 flex flex-col gap-3 transition-all"
+            <div key={file.id} className="rounded-xl p-5 flex flex-col gap-3 transition-all"
               style={{
                 background: "var(--bg-card)",
                 border: `1px solid ${isExpiring ? "rgba(239,68,68,0.3)" : isCritical ? "rgba(249,115,22,0.2)" : "var(--border)"}`,
                 boxShadow: isExpiring ? "0 0 20px rgba(239,68,68,0.05)" : "none",
-              }}
-            >
-              {/* Header */}
+                opacity: isDeleting ? 0.5 : 1, transition: "opacity 0.2s",
+              }}>
               <div className="flex items-start gap-3">
-                <span className="text-2xl leading-none mt-0.5">
-                  {getMimeTypeIcon(file.mimeType)}
-                </span>
+                <span className="text-2xl leading-none mt-0.5">{getMimeTypeIcon(file.mimeType)}</span>
                 <div className="flex-1 min-w-0">
                   {isRenaming ? (
                     <div>
-                      <input
-                        autoFocus
-                        value={renameValue}
+                      <input autoFocus value={renameValue}
                         onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRename(file.id)
-                          if (e.key === "Escape") { setRenamingId(null); setRenameError(null) }
-                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleRename(file.id); if (e.key === "Escape") { setRenamingId(null); setRenameError(null) } }}
                         onFocus={() => { renameFreshRef.current = false }}
-                        onBlur={() => {
-                          if (renameFreshRef.current) { renameFreshRef.current = false; return }
-                          handleRename(file.id)
-                        }}
+                        onBlur={() => { if (renameFreshRef.current) { renameFreshRef.current = false; return } handleRename(file.id) }}
                         className="w-full text-sm rounded px-2 py-0.5 outline-none"
-                        style={{
-                          background: "var(--bg-hover)",
-                          border: `1px solid ${renameError ? "#ef4444" : "var(--accent)"}`,
-                          color: "var(--text)",
-                        }}
-                      />
-                      {renameError && (
-                        <p className="text-xs mt-1" style={{ color: "#ef4444" }}>{renameError}</p>
-                      )}
+                        style={{ background: "var(--bg-hover)", border: `1px solid ${renameError ? "#ef4444" : "var(--accent)"}`, color: "var(--text)" }} />
+                      {renameError && <p className="text-xs mt-1" style={{ color: "#ef4444" }}>{renameError}</p>}
                     </div>
                   ) : (
-                    <p
-                      className="text-sm font-medium truncate cursor-pointer"
-                      title="Double-click to rename"
-                      onDoubleClick={() => startRename(file)}
-                    >
-                      {file.originalFilename}
-                    </p>
+                    <div className="flex items-center gap-1.5 group/name">
+                      <p className="text-sm font-medium truncate cursor-pointer"
+                        title="Click pencil or double-click to rename" onDoubleClick={() => startRename(file)}>
+                        {file.originalFilename}
+                      </p>
+                      <button onClick={() => startRename(file)}
+                        className="shrink-0 p-0.5 rounded opacity-0 group-hover/name:opacity-100 transition-opacity"
+                        style={{ color: "var(--text-dim)" }} title="Rename">
+                        <PencilIcon className="w-3 h-3" />
+                      </button>
+                    </div>
                   )}
                   <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                     {formatBytes(file.sizeBytes)} · v{file.currentVersionNumber} · {formatRelativeTime(file.uploadedAt)}
@@ -347,234 +262,186 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                 </div>
               </div>
 
-              {/* Decay bar */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-semibold" style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}>
-                    {decayLabel}
-                  </span>
+                  <span className="text-xs font-semibold" style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}>{decayLabel}</span>
                   <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                     <ClockIcon className="w-3 h-3" /> {daysLeft}d left
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
-                  <div
-                    className={`h-full rounded-full transition-all${isCritical ? " animate-pulse-slow" : ""}`}
-                    style={{ width: `${file.decayScore * 100}%`, background: decayColor }}
-                  />
+                  <div className={`h-full rounded-full transition-all${isCritical ? " animate-pulse-slow" : ""}`}
+                    style={{ width: `${file.decayScore * 100}%`, background: decayColor }} />
                 </div>
               </div>
 
-              {/* Action bar — 3 primary buttons + overflow menu */}
-              <div className="flex items-center gap-1.5 pt-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                <button
-                  onClick={() => handlePreview(file)}
-                  disabled={!!actionLoading}
-                  className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-50"
-                >
-                  <EyeIcon className="w-3.5 h-3.5" /> Preview
-                </button>
-                <button
-                  onClick={() => handleDownload(file.id, file.originalFilename)}
-                  disabled={!!actionLoading}
-                  className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-50"
-                >
-                  <DownloadIcon className="w-3.5 h-3.5" /> Download
-                </button>
-                <button
-                  onClick={() => handleRenew(file.id)}
-                  disabled={!!actionLoading}
-                  className="action-btn-green flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-50"
-                >
-                  <RefreshCwIcon className="w-3.5 h-3.5" /> Renew
-                </button>
-
-                {/* Overflow menu */}
-                <div className="relative shrink-0">
-                  <button
-                    onClick={() => setOpenMenuId(openMenuId === file.id ? null : file.id)}
-                    className="action-btn p-1.5 rounded-lg"
-                    title="More actions"
-                  >
-                    <MoreHorizontalIcon className="w-4 h-4" />
+              {isConfirmingDelete ? (
+                <div className="rounded-xl px-4 py-3 flex items-center gap-3"
+                  style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                  <AlertTriangleIcon className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />
+                  <p className="text-xs flex-1" style={{ color: "#ef4444" }}>Permanently delete? This cannot be undone.</p>
+                  <button onClick={() => handleDelete(file.id)}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-semibold shrink-0"
+                    style={{ background: "#ef4444", color: "#fff" }}>
+                    <CheckIcon className="w-3 h-3" /> Delete
                   </button>
-                  {openMenuId === file.id && (
-                    <>
-                      {/* Backdrop to close on outside click */}
-                      <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                      <div
-                        className="absolute right-0 bottom-full mb-1.5 z-20 rounded-xl overflow-hidden py-1 min-w-[160px]"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}
-                      >
-                        <button
-                          onClick={() => { startRename(file); setOpenMenuId(null) }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
-                        >
-                          <PencilIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} />
-                          Rename
-                        </button>
-                        <button
-                          onClick={() => { setMovingFile(file); setOpenMenuId(null) }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
-                        >
-                          <FolderInputIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} />
-                          Move to folder
-                        </button>
-                        <button
-                          onClick={() => { openVersions(file); setOpenMenuId(null) }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
-                        >
-                          <GitBranchIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} />
-                          Versions (v{file.currentVersionNumber})
-                        </button>
-                        <div style={{ height: "1px", background: "var(--border-subtle)", margin: "4px 0" }} />
-                        <button
-                          onClick={() => { handleDelete(file.id); setOpenMenuId(null) }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
-                          style={{ color: "#ef4444" }}
-                        >
-                          <Trash2Icon className="w-3.5 h-3.5 shrink-0" />
-                          Delete permanently
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  <button onClick={() => setConfirmState(null)} className="action-btn p-1 rounded-lg shrink-0">
+                    <XIcon className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center gap-1.5 pt-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                  <button onClick={() => handlePreview(file)}
+                    className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg">
+                    <EyeIcon className="w-3.5 h-3.5" /> Preview
+                  </button>
+                  <button onClick={() => handleDownload(file.id, file.originalFilename)} disabled={isDownloading}
+                    className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-60">
+                    {isDownloading ? (
+                      <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                        style={{ borderColor: "var(--border)", borderTopColor: "var(--text-muted)" }} />Fetching…</>
+                    ) : <><DownloadIcon className="w-3.5 h-3.5" /> Download</>}
+                  </button>
+                  <button onClick={() => handleRenew(file.id)} disabled={isRenewing}
+                    className="action-btn-green flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-60">
+                    {isRenewing ? (
+                      <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                        style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#34d399" }} />Renewing…</>
+                    ) : <><RefreshCwIcon className="w-3.5 h-3.5" /> Renew</>}
+                  </button>
+                  <div className="relative shrink-0">
+                    <button onClick={() => setOpenMenuId(openMenuId === file.id ? null : file.id)}
+                      className="action-btn p-1.5 rounded-lg" title="More actions">
+                      <MoreHorizontalIcon className="w-4 h-4" />
+                    </button>
+                    {openMenuId === file.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                        <div className="absolute right-0 bottom-full mb-1.5 z-20 rounded-xl overflow-hidden py-1 min-w-[160px]"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+                          <button onClick={() => { startRename(file); setOpenMenuId(null) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <PencilIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Rename
+                          </button>
+                          <button onClick={() => { setMovingFile(file); setOpenMenuId(null) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <FolderInputIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Move to folder
+                          </button>
+                          <button onClick={() => { openVersions(file); setOpenMenuId(null) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <GitBranchIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Versions (v{file.currentVersionNumber})
+                          </button>
+                          <div style={{ height: "1px", background: "var(--border-subtle)", margin: "4px 0" }} />
+                          <button onClick={() => { setConfirmState({ id: file.id, action: "delete" }); setOpenMenuId(null) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                            style={{ color: "#ef4444" }}>
+                            <Trash2Icon className="w-3.5 h-3.5 shrink-0" /> Delete permanently
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* ── Move to folder modal ─────────────────────────── */}
       {movingFile && (
         <Modal title="Move to folder" onClose={() => setMovingFile(null)}>
           <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
             Moving: <strong style={{ color: "var(--text)" }}>{movingFile.originalFilename}</strong>
           </p>
           <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            <button
-              onClick={() => handleMove(movingFile.id, null)}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
-              style={{
-                background: movingFile.folderId === null ? "var(--accent-dim)" : "var(--bg-hover)",
-                color: movingFile.folderId === null ? "var(--accent)" : "var(--text-muted)",
-              }}
-            >
-              🏠 Root (My Files)
+            <button onClick={() => handleMove(movingFile.id, null)} disabled={isLoading(movingFile.id + "-move")}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors disabled:opacity-50"
+              style={{ background: movingFile.folderId === null ? "var(--accent-dim)" : "var(--bg-hover)", color: movingFile.folderId === null ? "var(--accent)" : "var(--text-muted)" }}>
+              <FolderIcon className="w-4 h-4 shrink-0" style={{ color: "var(--text-dim)" }} /> Root (My Files)
             </button>
             {allFolders.map((folder) => (
-              <button
-                key={folder.id}
-                onClick={() => handleMove(movingFile.id, folder.id)}
-                disabled={movingFile.folderId === folder.id}
+              <button key={folder.id} onClick={() => handleMove(movingFile.id, folder.id)}
+                disabled={movingFile.folderId === folder.id || isLoading(movingFile.id + "-move")}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors disabled:opacity-50"
-                style={{
-                  background: movingFile.folderId === folder.id ? "var(--accent-dim)" : "var(--bg-hover)",
-                  color: movingFile.folderId === folder.id ? "var(--accent)" : "var(--text-muted)",
-                }}
-              >
-                <FolderIcon className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} />
-                {folder.name}
+                style={{ background: movingFile.folderId === folder.id ? "var(--accent-dim)" : "var(--bg-hover)", color: movingFile.folderId === folder.id ? "var(--accent)" : "var(--text-muted)" }}>
+                <FolderIcon className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} /> {folder.name}
               </button>
             ))}
           </div>
         </Modal>
       )}
 
-      {/* ── Version history drawer ───────────────────────── */}
       {versionsFile && (
-        <Modal
-          title={`Version history — ${versionsFile.originalFilename}`}
-          onClose={() => { setVersionsFile(null); setVersions([]) }}
-          wide
-        >
-          {/* Upload new version */}
-          <div
-            className="rounded-xl p-4 mb-4 flex items-center justify-between"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-          >
-            <div>
-              <p className="text-sm font-medium">Upload new version</p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                Current: v{versionsFile.currentVersionNumber}
-              </p>
+        <Modal title={`Version history — ${versionsFile.originalFilename}`}
+          onClose={() => { setVersionsFile(null); setVersions([]) }} wide>
+          <div className="rounded-xl p-4 mb-4" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-sm font-medium">Upload new version</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Current: v{versionsFile.currentVersionNumber}</p>
+              </div>
+              <label className="btn-accent text-xs px-4 py-2 rounded-lg cursor-pointer font-medium">
+                {uploadingVersion ? "Uploading…" : <span className="flex items-center gap-1.5"><UploadIcon className="w-3.5 h-3.5" /> Upload v{versionsFile.currentVersionNumber + 1}</span>}
+                <input type="file" className="hidden" disabled={uploadingVersion}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleNewVersionUpload(versionsFile, f) }} />
+              </label>
             </div>
-            <label className="btn-accent text-xs px-4 py-2 rounded-lg cursor-pointer font-medium">
-              {uploadingVersion ? "Uploading…" : (
-                <span className="flex items-center gap-1.5">
-                  <UploadIcon className="w-3.5 h-3.5" /> Upload v{versionsFile.currentVersionNumber + 1}
-                </span>
-              )}
-              <input
-                type="file"
-                className="hidden"
-                disabled={uploadingVersion}
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) handleNewVersionUpload(versionsFile, f)
-                }}
-              />
-            </label>
+            {uploadingVersion && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>Uploading…</span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>{versionProgress}%</span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${versionProgress}%`, background: "var(--accent)" }} />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Version list */}
           {versionsLoading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--bg-elevated)" }} />
-              ))}
-            </div>
+            <div className="space-y-2">{[...Array(3)].map((_, i) => (
+              <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+            ))}</div>
           ) : versions.length === 0 ? (
             <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No versions found</p>
           ) : (
             <div className="space-y-2">
               {versions.map((v) => {
                 const isCurrent = v.versionNumber === versionsFile.currentVersionNumber
+                const isConfirmingVersionDelete = confirmState?.id === versionsFile.id && confirmState.action === "deleteVersion" && confirmState.versionId === v.id
                 return (
-                  <div
-                    key={v.id}
-                    className="flex items-center gap-3 rounded-xl px-4 py-3"
-                    style={{
-                      background: isCurrent ? "var(--accent-dim)" : "var(--bg-elevated)",
-                      border: `1px solid ${isCurrent ? "rgba(245,166,35,0.25)" : "var(--border)"}`,
-                    }}
-                  >
-                    <span
-                      className="text-xs font-bold w-8 shrink-0"
-                      style={{ color: isCurrent ? "var(--accent)" : "var(--text-muted)", fontFamily: "DM Mono, monospace" }}
-                    >
-                      v{v.versionNumber}
-                    </span>
+                  <div key={v.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
+                    style={{ background: isCurrent ? "var(--accent-dim)" : "var(--bg-elevated)", border: `1px solid ${isCurrent ? "rgba(245,166,35,0.25)" : "var(--border)"}` }}>
+                    <span className="text-xs font-bold w-8 shrink-0"
+                      style={{ color: isCurrent ? "var(--accent)" : "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>v{v.versionNumber}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium">{v.label ?? `Version ${v.versionNumber}`}</p>
                       <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                         {formatBytes(v.sizeBytes)} · {formatRelativeTime(v.uploadedAt)}
                       </p>
                     </div>
-                    {isCurrent && (
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
-                        style={{ background: "var(--accent-dim)", color: "var(--accent)" }}
-                      >
-                        Current
-                      </span>
-                    )}
-                    <button
-                      onClick={() => downloadVersion(versionsFile.id, v.id, versionsFile.originalFilename)}
-                      className="action-btn p-1.5 rounded-md shrink-0"
-                      title="Download this version"
-                    >
-                      <DownloadIcon className="w-3.5 h-3.5" />
-                    </button>
-                    {!isCurrent && (
-                      <button
-                        onClick={() => deleteVersion(versionsFile.id, v.id)}
-                        className="action-btn-red p-1.5 rounded-md shrink-0"
-                        title="Delete this version"
-                      >
-                        <Trash2Icon className="w-3.5 h-3.5" />
-                      </button>
+                    {isCurrent && <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: "var(--accent-dim)", color: "var(--accent)" }}>Current</span>}
+                    {isConfirmingVersionDelete ? (
+                      <>
+                        <span className="text-xs shrink-0" style={{ color: "#ef4444" }}>Delete?</span>
+                        <button onClick={() => handleDeleteVersion(versionsFile.id, v.id)}
+                          className="text-xs px-2 py-1 rounded-lg font-semibold shrink-0" style={{ background: "#ef4444", color: "#fff" }}>Yes</button>
+                        <button onClick={() => setConfirmState(null)} className="action-btn p-1 rounded-md shrink-0"><XIcon className="w-3 h-3" /></button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => downloadVersion(versionsFile.id, v.id, versionsFile.originalFilename)}
+                          className="action-btn p-1.5 rounded-md shrink-0" title="Download this version">
+                          <DownloadIcon className="w-3.5 h-3.5" />
+                        </button>
+                        {!isCurrent && (
+                          <button onClick={() => setConfirmState({ id: versionsFile.id, action: "deleteVersion", versionId: v.id })}
+                            className="action-btn-red p-1.5 rounded-md shrink-0" title="Delete this version">
+                            <Trash2Icon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -583,32 +450,25 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
           )}
         </Modal>
       )}
-      {/* ── Preview modal ───────────────────────────────── */}
+
       {previewFile && (
-        <Modal
-          title={previewFile.originalFilename}
-          onClose={() => { setPreviewFile(null); setPreviewUrl(null) }}
-          fullscreen
-        >
+        <Modal title={previewFile.originalFilename} onClose={() => { setPreviewFile(null); setPreviewUrl(null) }} fullscreen>
           <div className="flex flex-col gap-3 overflow-hidden" style={{ flex: 1, minHeight: 0 }}>
-            {/* File meta bar */}
             <div className="flex items-center justify-between shrink-0">
               <p className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                 {formatBytes(previewFile.sizeBytes)} · {previewFile.mimeType}
               </p>
-              <button
-                onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
-                className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"
-              >
-                <DownloadIcon className="w-3.5 h-3.5" /> Download
+              <button onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
+                disabled={isLoading(previewFile.id + "-download")}
+                className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md disabled:opacity-60">
+                {isLoading(previewFile.id + "-download") ? (
+                  <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                    style={{ borderColor: "var(--border)", borderTopColor: "var(--text-muted)" }} />Fetching…</>
+                ) : <><DownloadIcon className="w-3.5 h-3.5" /> Download</>}
               </button>
             </div>
-
-            {/* Preview area — fills remaining modal height */}
-            <div
-              className="rounded-xl overflow-auto flex items-center justify-center"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", flex: 1, minHeight: 0 }}
-            >
+            <div className="rounded-xl overflow-auto flex items-center justify-center"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", flex: 1, minHeight: 0 }}>
               {previewLoading ? (
                 <div className="flex flex-col items-center gap-3" style={{ color: "var(--text-muted)" }}>
                   <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
@@ -631,10 +491,8 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                 <div className="flex flex-col items-center gap-3 p-8" style={{ color: "var(--text-muted)" }}>
                   <span className="text-5xl">{getMimeTypeIcon(previewFile.mimeType)}</span>
                   <p className="text-sm text-center">No preview available for this file type.</p>
-                  <button
-                    onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
-                    className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md mt-1"
-                  >
+                  <button onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
+                    className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md mt-1">
                     <DownloadIcon className="w-3.5 h-3.5" /> Download to open
                   </button>
                 </div>
@@ -647,66 +505,33 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
   )
 }
 
-// ── Text file preview (fetches and renders plain text) ────
 function TextPreview({ url }: { url: string }) {
   const [text, setText] = useState<string | null>(null)
-  // useEffect so the fetch runs after mount, not during render
-  // We inline it via a ref+flag pattern to avoid importing useEffect at top level
-  const fetchedRef = useRef(false)
-  if (!fetchedRef.current) {
-    fetchedRef.current = true
+  useEffect(() => {
     fetch(url).then((r) => r.text()).then(setText).catch(() => setText("Could not load text."))
-  }
+  }, [url])
   return (
-    <pre
-      className="w-full max-h-96 overflow-auto text-xs p-4 rounded-xl"
-      style={{ background: "var(--bg-elevated)", color: "var(--text)", fontFamily: "DM Mono, monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-    >
+    <pre className="w-full max-h-96 overflow-auto text-xs p-4 rounded-xl"
+      style={{ background: "var(--bg-elevated)", color: "var(--text)", fontFamily: "DM Mono, monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
       {text ?? "Loading…"}
     </pre>
   )
 }
 
-// ── Reusable modal shell ─────────────────────────────────
-function Modal({
-  title, onClose, children, wide = false, fullscreen = false
-}: {
-  title: string
-  onClose: () => void
-  children: React.ReactNode
-  wide?: boolean
-  fullscreen?: boolean
+function Modal({ title, onClose, children, wide = false, fullscreen = false }: {
+  title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; fullscreen?: boolean
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        className={`rounded-2xl w-full flex flex-col ${
-          fullscreen
-            ? "max-w-6xl p-6"
-            : wide
-            ? "max-w-2xl p-6"
-            : "max-w-sm p-6"
-        }`}
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-          maxHeight: fullscreen ? "92vh" : "85vh",
-          overflow: "hidden",
-        }}
-      >
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className={`rounded-2xl w-full flex flex-col ${fullscreen ? "max-w-6xl p-6" : wide ? "max-w-2xl p-6" : "max-w-sm p-6"}`}
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)", maxHeight: fullscreen ? "92vh" : "85vh", overflow: "hidden" }}>
         <div className="flex items-center justify-between mb-4 shrink-0">
           <h3 className="text-base font-semibold truncate pr-4">{title}</h3>
-          <button onClick={onClose} className="action-btn p-1.5 rounded-lg shrink-0">
-            <XIcon className="w-4 h-4" />
-          </button>
+          <button onClick={onClose} className="action-btn p-1.5 rounded-lg shrink-0"><XIcon className="w-4 h-4" /></button>
         </div>
-        <div className="flex flex-col overflow-hidden" style={{ flex: 1, minHeight: 0 }}>
-          {children}
-        </div>
+        <div className="flex flex-col overflow-hidden" style={{ flex: 1, minHeight: 0 }}>{children}</div>
       </div>
     </div>
   )
