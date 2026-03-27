@@ -6,16 +6,9 @@ import { FileGrid } from "@/components/dashboard/FileGrid"
 import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
-import { PLAN_STORAGE_LIMITS } from "@/lib/plans"
+import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import { ChevronRightIcon, HomeIcon, ArrowLeftIcon, AlertTriangleIcon, RefreshCwIcon } from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
-
-// Per-plan file count limits — adjust to match your plans.ts if needed
-const PLAN_FILE_LIMITS: Record<string, number> = {
-  free:    100,
-  starter: 1_000,
-  pro:     10_000,
-}
 
 export default function DashboardPage() {
   const [files, setFiles]           = useState<File[]>([])
@@ -94,7 +87,7 @@ export default function DashboardPage() {
 
   const storageLimit = user ? PLAN_STORAGE_LIMITS[user.plan] : PLAN_STORAGE_LIMITS.free
   const storageUsed  = user?.storageUsedBytes ?? 0
-  const fileLimit    = user ? (PLAN_FILE_LIMITS[user.plan] ?? 100) : 100
+  const fileLimit    = user ? (PLANS[user.plan as keyof typeof PLANS]?.maxFiles ?? 10) : 10
 
   const visibleFiles   = files.filter((f) => (f.folderId ?? null) === currentFolderId)
   const visibleFolders = folders.filter((f) => (f.parentId ?? null) === currentFolderId)

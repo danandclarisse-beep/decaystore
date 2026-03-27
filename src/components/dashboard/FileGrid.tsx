@@ -41,6 +41,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
   const [previewLoading, setPreviewLoading]   = useState(false)
   const [openMenuId, setOpenMenuId]           = useState<string | null>(null)
   const [confirmState, setConfirmState]       = useState<{ id: string; action: "delete" | "deleteVersion"; versionId?: string } | null>(null)
+  const [renewedId, setRenewedId] = useState<string | null>(null)
   const renameFreshRef = useRef(false)
 
   function startLoading(key: ActionKey) { setLoadingKeys((p) => new Set(p).add(key)) }
@@ -106,8 +107,25 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
 
   async function handleRenew(fileId: string) {
     const key = fileId + "-renew"; startLoading(key)
-    try { await fetch(`/api/files/${fileId}`, { method: "PATCH" }); onRefresh() }
-    finally { stopLoading(key) }
+    // Optimistic update: reset decay bar immediately so it feels instant
+    const renewedAt = new Date()
+    setLocalFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId
+          ? { ...f, decayScore: 0, lastAccessedAt: renewedAt, status: "active" as const, warnedAt: null }
+          : f
+      )
+    )
+    try {
+      await fetch(`/api/files/${fileId}`, { method: "PATCH" })
+      setRenewedId(fileId)
+      setTimeout(() => setRenewedId((id) => (id === fileId ? null : id)), 3000)
+      onRefresh()
+    } catch {
+      onRefresh() // revert to real server state on error
+    } finally {
+      stopLoading(key)
+    }
   }
 
   async function handleDelete(fileId: string) {
@@ -220,6 +238,7 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
           const isDownloading = isLoading(file.id + "-download")
           const isRenewing   = isLoading(file.id + "-renew")
           const isConfirmingDelete = confirmState?.id === file.id && confirmState.action === "delete"
+          const isRenewed   = renewedId === file.id
 
           return (
             <div key={file.id} className="rounded-xl p-5 flex flex-col gap-3 transition-all"
@@ -264,15 +283,27 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-semibold" style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}>{decayLabel}</span>
+                  {isRenewed ? (
+                    <span className="text-xs font-semibold flex items-center gap-1" style={{ color: "#34d399" }}>
+                      <CheckIcon className="w-3 h-3" /> Renewed!
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold" style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}>{decayLabel}</span>
+                  )}
                   <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
-                    <ClockIcon className="w-3 h-3" /> {daysLeft}d left
+                    <ClockIcon className="w-3 h-3" />
+                    {isRenewed ? `expires in ${file.decayRateDays}d` : `${daysLeft}d left`}
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
-                  <div className={`h-full rounded-full transition-all${isCritical ? " animate-pulse-slow" : ""}`}
-                    style={{ width: `${file.decayScore * 100}%`, background: decayColor }} />
+                  <div className={`h-full rounded-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
+                    style={{ width: isRenewed ? "0%" : `${file.decayScore * 100}%`, background: isRenewed ? "#34d399" : decayColor }} />
                 </div>
+                {!isRenewed && (
+                  <p className="text-xs mt-1" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
+                    {daysLeft === 0 ? "⚠ Deletes soon — renew now" : `Auto-resets on download · manual Renew resets anytime`}
+                  </p>
+                )}
               </div>
 
               {isConfirmingDelete ? (
@@ -302,11 +333,14 @@ export function FileGrid({ files, folders, allFolders, currentFolderId, onRefres
                         style={{ borderColor: "var(--border)", borderTopColor: "var(--text-muted)" }} />Fetching…</>
                     ) : <><DownloadIcon className="w-3.5 h-3.5" /> Download</>}
                   </button>
-                  <button onClick={() => handleRenew(file.id)} disabled={isRenewing}
-                    className="action-btn-green flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-60">
+                  <button onClick={() => handleRenew(file.id)} disabled={isRenewing || isRenewed}
+                    className="action-btn-green flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg disabled:opacity-60"
+                    title="Manually reset decay timer to full duration">
                     {isRenewing ? (
                       <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
                         style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#34d399" }} />Renewing…</>
+                    ) : isRenewed ? (
+                      <><CheckIcon className="w-3.5 h-3.5" /> Renewed!</>
                     ) : <><RefreshCwIcon className="w-3.5 h-3.5" /> Renew</>}
                   </button>
                   <div className="relative shrink-0">

@@ -8,7 +8,7 @@ export const PLANS = {
     variantId: null,
     storageGB: 1,
     decayDays: 14,
-    maxFiles: 10,
+    maxFiles: 100,
     features: [
       "1 GB storage",
       "Up to 10 files",
