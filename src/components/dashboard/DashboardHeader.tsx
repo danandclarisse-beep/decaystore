@@ -91,10 +91,6 @@ export function DashboardHeader({
             <Link
               href="/"
               prefetch={false}
-              onClick={(e) => {
-                // If Next.js routing fails, force it
-                if (e.defaultPrevented) forceNavigate("/")
-              }}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity"
             >
               <span
@@ -142,14 +138,10 @@ export function DashboardHeader({
               variant="header"
             />
 
-            {/* Upgrade button */}
             {user?.plan === "free" && (
               <Link
                 href="/pricing"
                 prefetch={false}
-                onClick={(e) => {
-                  if (e.defaultPrevented) forceNavigate("/pricing")
-                }}
                 className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hidden sm:flex items-center gap-1.5 hover:opacity-85 active:opacity-75"
                 style={{ background: "var(--accent)", color: "#000" }}
               >
