@@ -38,6 +38,8 @@ const nextConfig = {
           // Content Security Policy
           // - default-src 'self': block all unlisted sources by default
           // - script-src: allow self + Next.js inline runtime + Clerk hosted scripts
+          // - worker-src: Clerk spawns blob: Web Workers internally for token polling;
+          //   without this directive, script-src is used as fallback and blocks them.
           // - style-src: allow self + inline styles (Tailwind/CSS-in-JS)
           // - img-src: allow self + R2 public URLs + data URIs (avatars)
           // - connect-src: allow self + Clerk API + R2 upload endpoint
@@ -48,8 +50,10 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev",
+              "worker-src blob:",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: https://*.r2.dev https://img.clerk.com",
+              "media-src 'self' https://*.r2.cloudflarestorage.com",
               "font-src 'self' https://fonts.gstatic.com",
               "connect-src 'self' https://*.clerk.accounts.dev https://*.r2.cloudflarestorage.com",
               "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev",
