@@ -41,10 +41,12 @@ const nextConfig = {
           // - worker-src: Clerk spawns blob: Web Workers internally for token polling;
           //   without this directive, script-src is used as fallback and blocks them.
           // - style-src: allow self + inline styles (Tailwind/CSS-in-JS)
-          // - img-src: allow self + R2 public URLs + data URIs (avatars)
-          // - connect-src: allow self + Clerk API + R2 upload endpoint
-          // - frame-src: allow Clerk hosted UI iframes
+          // - img-src: allow self + R2 (images) + data URIs (avatars) + blob (canvas previews)
+          // - media-src: allow R2 presigned URLs for <video> and <audio> preview
+          // - frame-src: allow Clerk hosted UI iframes + R2 for PDF/iframe file preview
+          // - object-src: allow R2 presigned URLs for <object>-based PDF embed (Chrome)
           // - font-src: allow self + Google Fonts (Syne / DM Sans / DM Mono)
+          // - connect-src: allow self + Clerk API + R2 upload/download endpoint
           {
             key: 'Content-Security-Policy',
             value: [
@@ -52,12 +54,16 @@ const nextConfig = {
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev",
               "worker-src blob:",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "img-src 'self' data: https://*.r2.dev https://img.clerk.com",
-              "media-src 'self' https://*.r2.cloudflarestorage.com",
+              // blob: needed for canvas/image preview via createObjectURL
+              "img-src 'self' data: blob: https://*.r2.dev https://*.r2.cloudflarestorage.com https://img.clerk.com",
+              // R2 presigned URLs for <video> and <audio> preview
+              "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
+              // R2 presigned URLs for <iframe>-based PDF and text preview
+              "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev https://*.r2.cloudflarestorage.com",
+              // R2 presigned URLs for <object>/<embed>-based PDF preview (Chrome fallback)
+              "object-src https://*.r2.cloudflarestorage.com",
               "font-src 'self' https://fonts.gstatic.com",
               "connect-src 'self' https://*.clerk.accounts.dev https://*.r2.cloudflarestorage.com",
-              "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev",
-              "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
               "upgrade-insecure-requests",
