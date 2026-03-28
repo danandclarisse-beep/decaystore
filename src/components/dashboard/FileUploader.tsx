@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone"
 import {
   UploadCloudIcon, CheckCircleIcon, XCircleIcon,
   XIcon, RefreshCwIcon, FileIcon, FingerprintIcon,
+  ClockIcon, ChevronDownIcon,
 } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 
@@ -22,9 +23,27 @@ interface UploadState {
   error?: string
 }
 
+// [P5-1] Valid decay rate options exposed to Pro users in the upload form.
+// Free and Starter users are locked to their plan default — this selector
+// is hidden for them and the server enforces the plan rate regardless.
+const DECAY_RATE_OPTIONS = [
+  { label: "7 days",  value: 7  },
+  { label: "14 days", value: 14 },
+  { label: "30 days", value: 30 },
+  { label: "60 days", value: 60 },
+  { label: "90 days", value: 90 },
+  { label: "180 days", value: 180 },
+  { label: "1 year",  value: 365 },
+] as const
+
 export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props) {
-  const [uploads, setUploads]   = useState<UploadState[]>([])
-  const [isTouch, setIsTouch]   = useState(false)
+  const [uploads, setUploads]         = useState<UploadState[]>([])
+  const [isTouch, setIsTouch]         = useState(false)
+  // [P5-1] Custom decay rate — only sent when user is Pro
+  const [decayRateDays, setDecayRateDays] = useState<number>(90)
+  const [showDecayPicker, setShowDecayPicker] = useState(false)
+
+  const isPro = plan === "pro"
 
   useEffect(() => {
     setIsTouch(window.matchMedia("(pointer: coarse)").matches)
@@ -43,15 +62,23 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
     setUploads((prev) => [...prev, { id, file, status: "uploading", progress: 0 }])
 
     try {
+      const body: Record<string, unknown> = {
+        filename:    file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes:   file.size,
+        folderId:    currentFolderId,
+      }
+
+      // [P5-1] Pro users can pass a custom decayRateDays at upload time.
+      // The server validates the plan and enforces allowed values.
+      if (isPro) {
+        body.decayRateDays = decayRateDays
+      }
+
       const metaRes = await fetch("/api/files", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-          folderId: currentFolderId,
-        }),
+        body:    JSON.stringify(body),
       })
 
       if (!metaRes.ok) {
@@ -68,10 +95,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
             patchUpload(id, { progress: Math.round((e.loaded / e.total) * 100) })
           }
         }
-        xhr.onload = () => {
-          if (xhr.status < 400) resolve()
-          else reject(new Error(`Storage upload failed (${xhr.status})`))
-        }
+        xhr.onload  = () => xhr.status < 400 ? resolve() : reject(new Error(`Storage upload failed (${xhr.status})`))
         xhr.onerror = () => reject(new Error("Network error during upload"))
         xhr.open("PUT", uploadUrl)
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream")
@@ -89,7 +113,8 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
         error: err instanceof Error ? err.message : "Upload failed",
       })
     }
-  }, [onUploadComplete, currentFolderId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onUploadComplete, currentFolderId, isPro, decayRateDays])
 
   const retryUpload = useCallback((u: UploadState) => {
     dismissUpload(u.id)
@@ -105,8 +130,9 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
     maxSize: 5 * 1024 * 1024 * 1024,
   })
 
-  const activeUploads = uploads.filter((u) => u.status === "uploading")
-  const finishedCount = uploads.filter((u) => u.status === "done" || u.status === "error").length
+  const activeUploads  = uploads.filter((u) => u.status === "uploading")
+  const finishedCount  = uploads.filter((u) => u.status === "done" || u.status === "error").length
+  const selectedOption = DECAY_RATE_OPTIONS.find((o) => o.value === decayRateDays)
 
   return (
     <div className="space-y-3">
@@ -114,8 +140,8 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
         {...getRootProps()}
         className="rounded-xl p-6 sm:p-8 text-center cursor-pointer transition-all"
         style={{
-          background: isDragActive ? "var(--accent-dim)" : "var(--bg-card)",
-          border: isDragActive ? "2px dashed var(--accent)" : "2px dashed var(--border)",
+          background:  isDragActive ? "var(--accent-dim)" : "var(--bg-card)",
+          border:      isDragActive ? "2px dashed var(--accent)" : "2px dashed var(--border)",
         }}
       >
         <input {...getInputProps()} />
@@ -142,6 +168,79 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
         </p>
       </div>
 
+      {/* [P5-1] Pro decay rate picker — shown only for Pro users, below the drop zone */}
+      {isPro && (
+        <div
+          className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+          style={{
+            background: "var(--bg-card)",
+            border:     "1px solid var(--border)",
+          }}
+        >
+          <ClockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+            Decay rate for new uploads
+          </span>
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setShowDecayPicker((o) => !o)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              style={{
+                background: "var(--bg-elevated)",
+                border:     "1px solid var(--border)",
+                color:      "var(--accent)",
+              }}
+            >
+              {selectedOption?.label ?? "90 days"}
+              <ChevronDownIcon className="w-3 h-3" />
+            </button>
+
+            {showDecayPicker && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDecayPicker(false)} />
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-20 rounded-xl overflow-hidden py-1"
+                  style={{
+                    minWidth:   160,
+                    background: "var(--bg-elevated)",
+                    border:     "1px solid var(--border)",
+                    boxShadow:  "0 8px 32px rgba(0,0,0,0.4)",
+                  }}
+                >
+                  {DECAY_RATE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setDecayRateDays(opt.value); setShowDecayPicker(false) }}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                      style={{
+                        color: decayRateDays === opt.value ? "var(--accent)" : "var(--text)",
+                        fontWeight: decayRateDays === opt.value ? 600 : 400,
+                      }}
+                    >
+                      {opt.label}
+                      {decayRateDays === opt.value && (
+                        <span style={{ color: "var(--accent)" }}>✓</span>
+                      )}
+                    </button>
+                  ))}
+                  <div
+                    className="px-4 py-2 text-xs"
+                    style={{
+                      color:        "var(--text-dim)",
+                      borderTop:    "1px solid var(--border-subtle)",
+                      marginTop:    4,
+                    }}
+                  >
+                    File auto-deletes after this period of inactivity
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Upload progress list */}
       {uploads.length > 0 && (
         <div className="space-y-2">
           {activeUploads.length > 1 && (

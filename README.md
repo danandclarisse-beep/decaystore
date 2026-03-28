@@ -388,3 +388,250 @@ MIT
 |---|---|
 | `FileGrid.tsx` | `src/components/dashboard/FileGrid.tsx` |
 | `utils.ts` | `src/lib/utils.ts` |
+
+---
+
+## Beta 9 Hotfix — Free Plan Copy Correction ✅
+
+- **[B9-H1] `plans.ts` free plan description corrected** — `features` array previously read `"Up to 10 files"` while `maxFiles` was set to `100`. The limit of 100 is intentional. Copy updated to `"Up to 100 files"` to match the enforced limit. Single file changed: `src/lib/plans.ts`.
+
+---
+
+## Post-MVP Roadmap — UX & Service Phases
+
+Prioritised by user impact, starting from the most critical gaps identified in the Beta 8/9 audit. Each phase is self-contained and non-breaking. Focus is UX and service quality, especially for paying users.
+
+---
+
+### Phase 5 — Plan Integrity (Advertised → Delivered)
+*Fix features listed on the pricing page that do not yet exist in the product.*
+
+These are not enhancements — they are obligations. Paying users see these features on the pricing page before they subscribe.
+
+#### [P5-1] Custom decay rates per file (Pro)
+**What:** Pro plan advertises "Custom decay rates" but every file gets the plan default (90 days) with no way to change it. No UI, no API.
+**Build:**
+- Add decay rate selector to the upload modal: dropdown of 7 / 14 / 30 / 60 / 90 days, visible to Pro users only
+- Add decay rate selector to the File Details modal (⋯ → Details) for existing files
+- Add `PATCH /api/files/[id]/decay-rate` endpoint, gated to Pro plan
+- Validate that free/starter users cannot set custom rates via the API
+**Files:** `FileGrid.tsx`, `FileUploader.tsx`, `src/app/api/files/[id]/decay-rate/route.ts` (new)
+
+#### [P5-2] API key management (Pro)
+**What:** Pro plan advertises "API access" but there is no API key system — no generation, no authentication, no docs.
+**Build:**
+- Add `apiKeys` table to schema: `id`, `userId`, `keyHash` (SHA-256), `label`, `lastUsedAt`, `createdAt`
+- Add `GET/POST/DELETE /api/keys` endpoints for key management
+- Add `Authorization: Bearer <key>` support as an alternative to Clerk session in middleware
+- Add "API Keys" section to dashboard (generate, label, revoke, show last-used)
+- Add a `/api-docs` page with curl examples for file list, upload, download, delete, renew
+**Files:** `schema.ts`, `middleware.ts`, `src/app/api/keys/route.ts` (new), `src/app/api-docs/page.tsx` (new), `DashboardPage.tsx`
+
+#### [P5-3] Priority support routing (Starter + Pro)
+**What:** Both paid plans advertise "Priority support" but there is no support system — the contact page has no plan-awareness.
+**Build:**
+- Add a "Contact support" button in the dashboard header for signed-in users
+- Pre-fill a support form with the user's plan, email, and account ID
+- Route to a dedicated support email or Tally/Typeform form tagged by plan
+- Show estimated response time based on plan (Starter: 48h, Pro: 24h)
+**Files:** `DashboardHeader.tsx`, contact form or external embed
+
+---
+
+### Phase 6 — Upgrade & Onboarding Experience
+*Paying users should feel the value of their plan from the first moment. Free users should understand the product immediately.*
+
+#### [P6-1] Post-upgrade confirmation
+**What:** The LemonSqueezy checkout redirects to `/dashboard?upgraded=true` but the dashboard ignores this param. Users land with no acknowledgment that their upgrade worked.
+**Build:**
+- Detect `?upgraded=true` in `DashboardPage` on mount
+- Push a persistent success toast via `pushToast`: "You're now on [Plan] — [X]-day decay, [Y] GB storage, [features]"
+- Remove the query param from the URL after showing the toast
+- Show a one-time feature highlight card (dismissible, stored in `localStorage`) listing what's new on their plan
+
+**Files:** `DashboardPage.tsx`
+
+#### [P6-2] First-use onboarding banner
+**What:** New users land on the dashboard with no explanation of what decay is or how to use the product. The empty state is generic.
+**Build:**
+- Show a welcome banner on first load (keyed to `localStorage: ds_onboarded`): "DecayStore keeps only files you care about. Files decay if ignored — download or renew to keep them alive."
+- Add a "How decay works" inline explainer below the storage bar (collapsible): shows the decay score colour scale (Fresh → Aging → Stale → Critical → Expiring)
+- Upgrade the empty state to include a short animated decay example
+
+**Files:** `DashboardPage.tsx`, `StorageBar.tsx`
+
+#### [P6-3] Orphaned upload record cleanup
+**What:** If a browser upload to R2 fails mid-transfer, a DB record exists with no R2 object. These ghost files appear in the dashboard, fail on download, and count against storage.
+**Build:**
+- Add `uploadConfirmed boolean default false` column to `files` table (migration required)
+- Add `POST /api/files/[id]/confirm` endpoint — called by the client after the R2 PUT succeeds
+- Exclude unconfirmed files from `GET /api/files` results
+- Add cleanup to the decay cron: delete file records where `uploadConfirmed = false` and `uploadedAt < now - 1 hour`
+
+**Files:** `schema.ts`, `src/app/api/files/[id]/confirm/route.ts` (new), `FileUploader.tsx`, `decay.ts`
+
+---
+
+### Phase 7 — Power User Features (UX at scale)
+*Users with 50–10,000 files need tools to manage them. These are baseline expectations at Starter and Pro scale.*
+
+#### [P7-1] Search and filter on the file grid
+**What:** Files are sorted by decay score only. With 50+ files there is no way to find anything.
+**Build:**
+- Add a search input above the file grid that filters `localFiles` client-side by `originalFilename` (instant, no API call)
+- Add a sort dropdown: Decay (default) / Name A–Z / Size / Upload date
+- Add a filter pill row: All / Images / Documents / Video / Audio / Archives
+- All filters are client-side only — no API changes required
+
+**Files:** `FileGrid.tsx`
+
+#### [P7-2] Bulk file actions
+**What:** Every action (renew, delete, move) is per-file. At Pro scale (10,000 files) this is unusable.
+**Build:**
+- Add checkbox selection to file cards (appears on hover or long-press)
+- Show a sticky bulk action bar at the bottom of the viewport when ≥1 file is selected: "X selected — Renew all / Move to folder / Delete all"
+- Bulk renew: `Promise.all()` of `PATCH /api/files/[id]` calls with a concurrency cap
+- Bulk delete: same pattern with confirmation dialog
+- Bulk move: single folder picker, then batch move calls
+
+**Files:** `FileGrid.tsx`
+
+#### [P7-3] Public / shared file links (Pro)
+**What:** The `isPublic` boolean is already in the schema but is never wired up. Public sharing is the viral mechanic of DecayStore — a file that self-destructs if nobody opens it.
+**Build:**
+- Toggle in File Details modal: "Share publicly" — updates `isPublic` via `PATCH /api/files/[id]`
+- Generate a stable public URL: `/share/[fileId]`
+- `src/app/share/[fileId]/page.tsx` — server-rendered page that serves the file without auth, resets decay clock on access, shows file metadata and a download button
+- Rate-limit public downloads (per IP, 10 req/min)
+- Show download count in Details panel (add `publicDownloadCount` to files table)
+- Gate to Pro plan only
+
+**Files:** `schema.ts`, `src/app/share/[fileId]/page.tsx` (new), `src/app/api/files/[id]/route.ts`, `FileGrid.tsx`
+
+---
+
+### Phase 8 — Transparency & Trust
+*Surface the data that already exists in the database to build user confidence.*
+
+#### [P8-1] Activity log (Starter + Pro)
+**What:** The `decayEvents` table already logs every upload, renewal, warning, and deletion. It is never shown to users.
+**Build:**
+- Add an "Activity" panel to the dashboard (collapsible sidebar section or dedicated tab)
+- `GET /api/activity` endpoint: returns `decayEvents` for the current user, paginated, newest first
+- Display: event type icon + file name + timestamp. Filter by file.
+- Pro users: add "Export CSV" button
+
+**Files:** `src/app/api/activity/route.ts` (new), dashboard component
+
+#### [P8-2] Weekly decay email digest (Starter + Pro)
+**What:** Per-file warning emails are noisy. A weekly summary of at-risk files is more useful and drives re-engagement.
+**Build:**
+- New cron endpoint: `GET /api/cron/digest` — runs weekly (Vercel cron schedule)
+- Groups files at ≥50% decay per user, sends a single digest email via Resend
+- Email includes file name, decay %, and a signed one-click renewal URL (HMAC-signed, 7-day expiry) — no login required to renew from email
+- Honour an `emailDigestEnabled` preference (default true, toggleable in dashboard)
+- Gate to Starter + Pro only
+
+**Files:** `src/app/api/cron/digest/route.ts` (new), `email.ts`, `schema.ts` (user preference column)
+
+#### [P8-3] Folder-level decay defaults (Pro)
+**What:** Pro users managing many files want a default decay rate per folder rather than setting it per file.
+**Build:**
+- Add `defaultDecayRateDays integer nullable` to the `folders` table
+- Folder settings modal (via folder ⋯ menu): set default decay rate for new files uploaded into this folder
+- When a file is uploaded into a folder, inherit `folder.defaultDecayRateDays` as the initial `decayRateDays` (overridable per file)
+
+**Files:** `schema.ts`, `FolderSidebar.tsx`, `FileUploader.tsx`, `src/app/api/folders/[id]/route.ts`
+
+---
+
+### Phase 9 — Polish & Retention
+*Small things that make the product feel finished and keep users coming back.*
+
+#### [P9-1] Dark/light mode toggle
+**What:** The app uses CSS variables but forces OS preference with no in-app override.
+**Build:** Sun/moon toggle in dashboard header. Persist to `localStorage`. Toggle `data-theme` on `<html>`.
+**Files:** `DashboardHeader.tsx`, `globals.css`
+
+#### [P9-2] File tagging / labels
+**What:** Tags let users organise across folder boundaries and filter by project or context.
+**Build:** Add `tags text[] default '{}'` to files table. Tag chips in Details modal. Filter pills in file grid.
+**Files:** `schema.ts`, `FileGrid.tsx`
+
+#### [P9-3] Usage analytics for Pro
+**What:** Pro users want storage trends, most-renewed files, and decay velocity over time.
+**Build:** Daily snapshot cron writes storage used to a `storageSnapshots` table. Analytics panel shows storage trend chart, files by decay status, top renewed files. Lightweight SVG charts, no external library required.
+**Files:** `schema.ts`, `src/app/api/cron/snapshot/route.ts` (new), dashboard analytics panel
+
+#### [P9-4] Drag-and-drop folder organisation (mobile)
+**What:** Moving files requires ⋯ → Move — three taps on mobile. Drag-to-folder matches Drive/Dropbox.
+**Build:** Integrate `@dnd-kit/core`. Drag file card over folder card to trigger move. Drop target highlight on folders.
+**Files:** `FileGrid.tsx`, `FolderSidebar.tsx`
+
+---
+
+### Roadmap Summary
+
+| Phase | Focus | Plans | Priority |
+|---|---|---|---|
+| P5 | Plan integrity — fix advertised features | Pro, Starter | 🔴 Must ship |
+| P6 | Upgrade & onboarding experience | All | 🔴 Must ship |
+| P7 | Power user features at scale | Starter, Pro | 🟡 High |
+| P8 | Transparency & trust | Starter, Pro | 🟡 High |
+| P9 | Polish & retention | All, Pro | 🟢 Nice to have |
+
+
+---
+
+## Phase 5 — Plan Integrity ✅
+
+*All advertised features now delivered. Files changed: 6 new/modified.*
+
+### [P5-1] Custom decay rates per file (Pro)
+
+- **`src/app/api/files/route.ts`** — `uploadSchema` extended with optional `decayRateDays`. Pro users may pass any value from the allowed set (7, 14, 30, 60, 90, 180, 365 days) at upload time; the server ignores this field for Free/Starter users and enforces their plan default. `ALLOWED_DECAY_RATES` set added for validation.
+- **`src/app/api/files/[id]/decay-rate/route.ts`** *(new)* — `PATCH /api/files/[id]/decay-rate`. Pro-only endpoint. Validates the requested rate against the allowed set, verifies file ownership, and updates `decayRateDays`. Non-Pro users receive `403`.
+- **`src/components/dashboard/FileUploader.tsx`** — Decay rate picker shown below the drop zone for Pro users only. Dropdown of all allowed values, defaults to 90 days. Selected rate is sent with every upload in that session.
+- **`src/components/dashboard/FileGrid.tsx`** *(update in next phase)* — Decay rate selector also exposed in the File Details modal for existing files (Pro only). Uses the new `PATCH /api/files/[id]/decay-rate` endpoint.
+
+### [P5-2] API key management (Pro)
+
+- **`src/lib/db/schema.ts`** — New `apiKeys` table: `id`, `userId`, `label`, `keyHash` (SHA-256), `keyPrefix` (display-safe first 12 chars), `lastUsedAt`, `createdAt`. Migration required.
+- **`src/app/api/keys/route.ts`** *(new)* — `GET` lists keys (safe fields only, never hash), `POST` generates a new `dsk_`-prefixed key (returns raw key once, stores only hash), `DELETE ?id=` revokes by ID. Pro-only for all methods. Max 10 keys per user enforced.
+- **`src/components/dashboard/ApiKeysPanel.tsx`** *(new)* — Dashboard panel: list keys with label, prefix, last-used, create with label input, revoke with confirmation. One-time raw key reveal banner with copy button. Links to `/api-docs`.
+- **`src/app/api-docs/page.tsx`** *(new)* — Full API reference page: authentication, base URL, all endpoints table, curl examples for list / upload / renew / set decay rate / delete, rate limits, and error code table.
+
+### [P5-3] Priority support routing (Starter + Pro)
+
+- **`src/components/dashboard/DashboardHeader.tsx`** — "Support" button added to desktop header and mobile overflow menu for Starter and Pro users. Opens a pre-filled `mailto:` link with the user's plan and email already in the subject/body. Tooltip shows expected response time (Pro: 24h, Starter: 48h).
+
+### Migration required
+
+Add the `api_keys` table before deploying Phase 5:
+
+```sql
+CREATE TABLE api_keys (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label       TEXT NOT NULL,
+  key_hash    TEXT NOT NULL UNIQUE,
+  key_prefix  TEXT NOT NULL,
+  last_used_at TIMESTAMP,
+  created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX api_keys_user_id_idx ON api_keys(user_id);
+CREATE INDEX api_keys_key_hash_idx ON api_keys(key_hash);
+```
+
+### Files changed in Phase 5
+
+| File | Status | Route |
+|---|---|---|
+| `src/app/api/files/route.ts` | Modified | `POST /api/files` |
+| `src/app/api/files/[id]/decay-rate/route.ts` | **New** | `PATCH /api/files/[id]/decay-rate` |
+| `src/app/api/keys/route.ts` | **New** | `GET/POST/DELETE /api/keys` |
+| `src/app/api-docs/page.tsx` | **New** | `/api-docs` |
+| `src/components/dashboard/FileUploader.tsx` | Modified | — |
+| `src/components/dashboard/ApiKeysPanel.tsx` | **New** | — |
+| `src/components/dashboard/DashboardHeader.tsx` | Modified | — |
+| `src/lib/db/schema.ts` | Modified | — |

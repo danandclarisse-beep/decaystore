@@ -42,13 +42,17 @@ const ALLOWED_MIME_TYPES = new Set([
   "font/woff", "font/woff2", "font/ttf", "font/otf",
 ])
 
+const ALLOWED_DECAY_RATES = new Set([7, 14, 30, 60, 90, 180, 365])
+
 // [S6] Zod schema for upload initiation — replaces ad-hoc if-checks.
 const uploadSchema = z.object({
-  filename:    z.string().min(1).max(255),
-  contentType: z.string().min(1),
-  sizeBytes:   z.number().int().positive().max(5 * 1024 * 1024 * 1024), // 5 GB hard cap
-  description: z.string().max(500).optional(),
-  folderId:    z.string().uuid().optional(),
+  filename:      z.string().min(1).max(255),
+  contentType:   z.string().min(1),
+  sizeBytes:     z.number().int().positive().max(5 * 1024 * 1024 * 1024), // 5 GB hard cap
+  description:   z.string().max(500).optional(),
+  folderId:      z.string().uuid().optional(),
+  // [P5-1] Pro users may specify a custom decay rate at upload time.
+  decayRateDays: z.number().int().positive().optional(),
 })
 
 // ─── GET /api/files — list user's files ───────────────────
@@ -102,7 +106,7 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    const { filename, contentType, sizeBytes, description, folderId } = parsed.data
+    const { filename, contentType, sizeBytes, description, folderId, decayRateDays: requestedRate } = parsed.data
 
     // [S4] Reject MIME types not on the allowlist
     if (!ALLOWED_MIME_TYPES.has(contentType)) {
@@ -110,6 +114,22 @@ export async function POST(request: Request) {
         { error: `File type "${contentType}" is not supported.` },
         { status: 415 }
       )
+    }
+
+    // [P5-1] Determine effective decay rate.
+    // Pro users may pass a custom rate; it must be in the allowed set.
+    // Non-Pro users always get their plan default — any client-supplied value is ignored.
+    // Typed as `number` (not the literal union from PLAN_DECAY_RATES) so the Pro
+    // override assignment below satisfies TypeScript.
+    let decayRateDays: number = PLAN_DECAY_RATES[user.plan as keyof typeof PLAN_DECAY_RATES]
+    if (user.plan === "pro" && requestedRate !== undefined) {
+      if (!ALLOWED_DECAY_RATES.has(requestedRate)) {
+        return NextResponse.json(
+          { error: `Invalid decay rate. Allowed values: 7, 14, 30, 60, 90, 180, 365 days.` },
+          { status: 400 }
+        )
+      }
+      decayRateDays = requestedRate
     }
 
     // Validate folderId belongs to this user if provided
@@ -144,11 +164,9 @@ export async function POST(request: Request) {
     }
 
     // Generate presigned URL
-    const r2Key    = buildR2Key(user.id, filename)
+    const r2Key     = buildR2Key(user.id, filename)
     const uploadUrl = await getPresignedUploadUrl(r2Key, contentType)
-
     // Insert file record
-    const decayRateDays = PLAN_DECAY_RATES[user.plan]
     const [newFile] = await db
       .insert(files)
       .values({

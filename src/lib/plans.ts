@@ -11,7 +11,7 @@ export const PLANS = {
     maxFiles: 100,
     features: [
       "1 GB storage",
-      "Up to 10 files",
+      "Up to 100 files",
       "14-day decay window",
       "Email warnings",
     ],

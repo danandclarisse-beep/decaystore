@@ -8,6 +8,7 @@ import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
+import { ApiKeysPanel } from "@/components/dashboard/ApiKeysPanel"
 import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import {
@@ -275,6 +276,9 @@ export default function DashboardPage() {
               renewFileRef={renewFileRef}
             />
           )}
+
+          {/* [P5-2] API key management — Pro users only */}
+          <ApiKeysPanel isPro={user?.plan === "pro"} />
         </main>
       </div>
 

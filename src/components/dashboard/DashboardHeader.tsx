@@ -10,6 +10,7 @@ import {
   MoreHorizontalIcon,
   CreditCardIcon,
   ZapIcon,
+  LifeBuoyIcon,
 } from "lucide-react"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import type { User } from "@/lib/db/schema"
@@ -145,7 +146,24 @@ export function DashboardHeader({
               variant="header"
             />
 
-            {/* Upgrade button — changed to button with direct navigation */}
+            {/* Support button — Starter + Pro */}
+            {(user?.plan === "starter" || user?.plan === "pro") && (
+              <a
+                href={`mailto:support@decaystore.com?subject=${encodeURIComponent(`[${user.plan.toUpperCase()}] Support request`)}&body=${encodeURIComponent(`Account: ${(user as unknown as { email?: string }).email ?? ""}\nPlan: ${user.plan}\n\nDescribe your issue:\n`)}`}
+                className="text-xs px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-1.5 hover:opacity-85 transition-all pointer-events-auto"
+                style={{
+                  color:      "var(--text-muted)",
+                  border:     "1px solid var(--border)",
+                  background: "var(--bg-card)",
+                }}
+                title={user.plan === "pro" ? "Priority support — 24h response" : "Support — 48h response"}
+              >
+                <LifeBuoyIcon className="w-3 h-3" />
+                Support
+              </a>
+            )}
+
+            {/* Upgrade button */}
             {user?.plan === "free" && (
               <button
                 onClick={() => forceNavigate("/pricing")}
@@ -208,6 +226,18 @@ export function DashboardHeader({
                       >
                         Signed in as <span style={{ color: "var(--text)" }}>{firstName}</span>
                       </div>
+                    )}
+
+                    {(user?.plan === "starter" || user?.plan === "pro") && (
+                      <a
+                        href={`mailto:support@decaystore.com?subject=${encodeURIComponent(`[${user.plan.toUpperCase()}] Support request`)}&body=${encodeURIComponent(`Account: ${(user as unknown as { email?: string }).email ?? ""}\nPlan: ${user.plan}\n\nDescribe your issue:\n`)}`}
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors hover:bg-[var(--bg-hover)]"
+                        style={{ color: "var(--text)" }}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <LifeBuoyIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                        Support {user.plan === "pro" ? "(24h)" : "(48h)"}
+                      </a>
                     )}
 
                     {user?.plan === "free" && (
