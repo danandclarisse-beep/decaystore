@@ -10,11 +10,12 @@ import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import { UpgradeBanner } from "@/components/dashboard/UpgradeBanner"
 import { OnboardingBanner, DecayExplainer } from "@/components/dashboard/OnboardingBanner"
+import { ActivityPanel } from "@/components/dashboard/ActivityPanel"
 import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import {
   ChevronRightIcon, HomeIcon, ArrowLeftIcon,
-  AlertTriangleIcon, RefreshCwIcon,
+  AlertTriangleIcon, RefreshCwIcon, HistoryIcon,
 } from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
 
@@ -34,6 +35,8 @@ function DashboardPage() {
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState<Folder[]>([])
+  // [P8-1] Activity panel open/close
+  const [activityOpen, setActivityOpen] = useState(false)
 
   const router = useRouter()
 
@@ -128,6 +131,8 @@ function DashboardPage() {
   const fileLimit      = user ? (PLANS[user.plan as keyof typeof PLANS]?.maxFiles ?? 10) : 10
   const visibleFiles   = files.filter((f) => (f.folderId ?? null) === currentFolderId)
   const visibleFolders = folders.filter((f) => (f.parentId ?? null) === currentFolderId)
+  // [P8-3] Current folder object — used to pass defaultDecayRateDays to FileUploader
+  const currentFolder  = currentFolderId ? folders.find((f) => f.id === currentFolderId) ?? null : null
 
   return (
     <div style={{ background: "var(--bg)", minHeight: "100vh" }}>
@@ -147,9 +152,11 @@ function DashboardPage() {
           currentFolderId={currentFolderId}
           onNavigate={handleSidebarNavigate}
           onRefresh={fetchAll}
+          plan={user?.plan ?? "free"}
         />
 
-        {/* Main content */}
+        {/* Main content + Activity panel */}
+        <div className="flex-1 min-w-0 flex gap-4 sm:gap-6">
         <main className="flex-1 min-w-0 space-y-4 sm:space-y-5 pb-24 lg:pb-0">
 
           {/* [P6-1] Post-upgrade confirmation — shown once after checkout redirect */}
@@ -171,45 +178,63 @@ function DashboardPage() {
           {/* [P6-2] Decay explainer — collapsible, always available */}
           {!loading && <DecayExplainer plan={user?.plan ?? "free"} />}
 
-          {/* Breadcrumb */}
-          <nav className="flex items-center gap-1.5 text-sm flex-wrap">
-            {currentFolderId && (
+          {/* Breadcrumb + Activity toggle */}
+          <div className="flex items-center justify-between gap-2">
+            <nav className="flex items-center gap-1.5 text-sm flex-wrap flex-1 min-w-0">
+              {currentFolderId && (
+                <button
+                  onClick={() => navigateTo(folderPath.length - 2)}
+                  className="lg:hidden flex items-center gap-1 text-xs px-2 py-1 rounded-lg mr-1"
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-muted)",
+                  }}
+                  aria-label="Go back"
+                >
+                  <ArrowLeftIcon className="w-3.5 h-3.5" /> Back
+                </button>
+              )}
               <button
-                onClick={() => navigateTo(folderPath.length - 2)}
-                className="lg:hidden flex items-center gap-1 text-xs px-2 py-1 rounded-lg mr-1"
-                style={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-muted)",
-                }}
-                aria-label="Go back"
+                onClick={() => navigateTo(-1)}
+                className="flex items-center gap-1.5 transition-colors font-medium"
+                style={{ color: currentFolderId ? "var(--text-muted)" : "var(--text)" }}
               >
-                <ArrowLeftIcon className="w-3.5 h-3.5" /> Back
+                <HomeIcon className="w-3.5 h-3.5" />
+                My Files
+              </button>
+              {folderPath.map((folder, i) => (
+                <span key={folder.id} className="flex items-center gap-1.5">
+                  <ChevronRightIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
+                  <button
+                    onClick={() => navigateTo(i)}
+                    className="transition-colors font-medium truncate max-w-[120px] sm:max-w-none"
+                    style={{
+                      color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)",
+                    }}
+                  >
+                    {folder.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+
+            {/* [P8-1] Activity toggle button — Starter + Pro */}
+            {(user?.plan === "starter" || user?.plan === "pro") && (
+              <button
+                onClick={() => setActivityOpen((o) => !o)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
+                style={{
+                  background: activityOpen ? "var(--accent-dim)" : "var(--bg-card)",
+                  border: `1px solid ${activityOpen ? "var(--accent)" : "var(--border)"}`,
+                  color: activityOpen ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                <HistoryIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Activity</span>
               </button>
             )}
-            <button
-              onClick={() => navigateTo(-1)}
-              className="flex items-center gap-1.5 transition-colors font-medium"
-              style={{ color: currentFolderId ? "var(--text-muted)" : "var(--text)" }}
-            >
-              <HomeIcon className="w-3.5 h-3.5" />
-              My Files
-            </button>
-            {folderPath.map((folder, i) => (
-              <span key={folder.id} className="flex items-center gap-1.5">
-                <ChevronRightIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
-                <button
-                  onClick={() => navigateTo(i)}
-                  className="transition-colors font-medium truncate max-w-[120px] sm:max-w-none"
-                  style={{
-                    color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)",
-                  }}
-                >
-                  {folder.name}
-                </button>
-              </span>
-            ))}
-          </nav>
+          </div>
 
           {/* Fetch error */}
           {fetchError && !loading && (
@@ -257,6 +282,7 @@ function DashboardPage() {
             }}
             plan={user?.plan ?? "free"}
             currentFolderId={currentFolderId}
+            currentFolder={currentFolder}
           />
 
           {/* File grid */}
@@ -296,6 +322,27 @@ function DashboardPage() {
             />
           )}
         </main>
+
+        {/* [P8-1] Activity panel — inline on desktop */}
+        {activityOpen && (
+          <div className="hidden lg:block w-[420px] shrink-0">
+            <ActivityPanel
+              plan={user?.plan ?? "free"}
+              isOpen={activityOpen}
+              onClose={() => setActivityOpen(false)}
+            />
+          </div>
+        )}
+        </div>
+      </div>
+
+      {/* [P8-1] Activity panel mobile drawer */}
+      <div className="lg:hidden">
+        <ActivityPanel
+          plan={user?.plan ?? "free"}
+          isOpen={activityOpen}
+          onClose={() => setActivityOpen(false)}
+        />
       </div>
 
       {/* Mobile floating notification FAB */}

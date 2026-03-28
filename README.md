@@ -510,8 +510,8 @@ CREATE TABLE storage_snapshots (
 
 ---
 
-### Phase 8 — Transparency & Trust
-*Surface the data that already exists in the database to build user confidence.*
+### Phase 8 — Transparency & Trust ✅
+*All transparency features delivered. Files changed: 9 new/modified.*
 
 #### [P8-1] Activity log (Starter + Pro)
 **What:** The `decayEvents` table already logs every upload, renewal, warning, and deletion. It is never shown to users.
@@ -577,9 +577,57 @@ CREATE TABLE storage_snapshots (
 | P5 | Plan integrity — fix advertised features | Pro, Starter | 🔴 Must ship |
 | P6 | Upgrade & onboarding experience | All | 🔴 Must ship |
 | P7 | Power user features at scale | Starter, Pro | ✅ Done |
-| P8 | Transparency & trust | Starter, Pro | 🟡 High |
+| P8 | Transparency & trust | Starter, Pro | ✅ Done |
 | P9 | Polish & retention | All, Pro | 🟢 Nice to have |
 
+
+---
+
+## Phase 8 — Transparency & Trust ✅
+
+*Surface the data that already exists in the database to build user confidence. Files changed: 6 new/modified.*
+
+### [P8-1] Activity log (Starter + Pro)
+
+- **`src/app/api/activity/route.ts`** *(new)* — `GET /api/activity`. Gated to Starter + Pro (`403` for free). Returns `decayEvents` for the current user, paginated (50/page), newest first. Optional `?fileId=` filter with IDOR ownership guard. Pro users may append `?export=csv` to receive a full CSV download of all matching events (no page cap).
+
+- **`src/components/dashboard/ActivityPanel.tsx`** *(new)* — Severity-coded event list: upload / renewed / warned / critical / deleted / pruned — each with its own icon and color. Per-row "Filter" link narrows the panel to one file's history; active filter shown in a dismissible strip at the top. Prev/Next pagination footer. Pro users see an "Export CSV" button. Desktop: fixed-width `420px` inline panel that slides in beside the main content. Mobile: full-height right drawer with blurred backdrop and close button.
+
+- **`src/app/dashboard/page.tsx`** *(modified)* — Imports `ActivityPanel` and `HistoryIcon`. `activityOpen` boolean state drives both desktop panel and mobile drawer. "Activity" toggle button added to the breadcrumb row (visible to Starter + Pro only). Desktop: wraps `<main>` and the panel in a shared flex container. Mobile: renders panel via a `lg:hidden` wrapper so it renders as a drawer on small screens. `currentFolder` derived from `folders.find()` and passed to `<FileUploader>`.
+
+### [P8-2] Weekly decay email digest (Starter + Pro)
+
+- **`src/app/api/cron/digest/route.ts`** *(new)* — `GET /api/cron/digest`, `maxDuration: 60`. CRON_SECRET-gated. Fetches all Starter + Pro users with `emailDigestEnabled = true`. For each, loads their active confirmed files, computes live decay scores in-process using `calculateDecayScore`, and filters to files ≥ 50% decayed. Skips users with no at-risk files. Calls `sendWeeklyDigestEmail`; response body includes `usersProcessed`, `emailsSent`, `emailsFailed`, `usersSkipped`, and `durationMs`.
+
+- **`src/lib/email.ts`** *(modified)* — New `sendWeeklyDigestEmail(email, plan, atRiskFiles)` function. Sends an HTML email with a table of up to 10 at-risk files showing filename, decay %, days remaining, and a one-click Renew button. Renew URLs are HMAC-SHA256-signed with `CRON_SECRET` and carry a 7-day expiry timestamp — no login required. Files beyond 10 show a "+N more" footnote with a link to the dashboard. Footer includes plan name and, for Pro users, a link to manage digest preferences.
+
+- **`vercel.json`** *(modified)* — Added `{ "path": "/api/cron/digest", "schedule": "0 9 * * 1" }` — runs every Monday at 09:00 UTC.
+
+### [P8-3] Folder-level decay defaults (Pro)
+
+- **`src/app/api/folders/[id]/route.ts`** *(modified)* — PATCH now parses its body with a Zod schema accepting `name` (rename), `defaultDecayRateDays` (nullable integer), or both. `defaultDecayRateDays` is Pro-only (`403` otherwise); validated against the shared `ALLOWED_DECAY_RATES` set (7, 14, 30, 60, 90, 180, 365). Passing `null` clears the default and reverts new uploads in this folder to the user's plan default.
+
+- **`src/components/dashboard/FolderSidebar.tsx`** *(modified)* — Accepts new `plan?: string` prop. New state: `decaySettingsFolder`, `pendingDecayRate`, `savingDecay`, `decayError`. "Decay settings" option added to the folder `⋯` overflow menu (Pro only, hidden otherwise). Opens a modal with a grid of rate options (Plan default + 7 specific values). Saves via `PATCH /api/folders/[id]` with `{ defaultDecayRateDays }` and calls `onRefresh()` on success.
+
+- **`src/components/dashboard/FileUploader.tsx`** *(modified)* — New `currentFolder?: { defaultDecayRateDays: number | null } | null` prop. For Pro users, the decay rate picker initialises to `folder.defaultDecayRateDays` when set (synced via `useEffect` on folder change). Picker label shows a "(folder default)" hint when inheriting. Non-Pro users are unaffected — the picker remains hidden and the server enforces their plan rate.
+
+### Migration required for Phase 8
+
+No new columns or tables are needed — `emailDigestEnabled` was pre-added to `users` in Phase 7, and `defaultDecayRateDays` was pre-added to `folders` in Phase 7. No migration SQL is required before deploying Phase 8.
+
+### Files changed in Phase 8
+
+| File | Status | Route / Location |
+|---|---|---|
+| `src/app/api/activity/route.ts` | **New** | `GET /api/activity` |
+| `src/app/api/cron/digest/route.ts` | **New** | `GET /api/cron/digest` |
+| `src/components/dashboard/ActivityPanel.tsx` | **New** | Dashboard component |
+| `src/lib/email.ts` | Modified | `sendWeeklyDigestEmail` added |
+| `src/components/dashboard/FolderSidebar.tsx` | Modified | Decay settings modal (Pro) |
+| `src/components/dashboard/FileUploader.tsx` | Modified | Inherits folder decay default |
+| `src/app/api/folders/[id]/route.ts` | Modified | PATCH accepts `defaultDecayRateDays` |
+| `src/app/dashboard/page.tsx` | Modified | Activity panel wiring, `currentFolder` prop |
+| `vercel.json` | Modified | Digest cron schedule added |
 
 ---
 

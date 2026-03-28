@@ -13,6 +13,8 @@ interface Props {
   onUploadComplete: () => void
   plan: string
   currentFolderId: string | null
+  // [P8-3] Pass current folder object so uploader can inherit defaultDecayRateDays
+  currentFolder?: { defaultDecayRateDays: number | null } | null
 }
 
 interface UploadState {
@@ -36,14 +38,28 @@ const DECAY_RATE_OPTIONS = [
   { label: "1 year",  value: 365 },
 ] as const
 
-export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props) {
+export function FileUploader({ onUploadComplete, plan, currentFolderId, currentFolder }: Props) {
   const [uploads, setUploads]         = useState<UploadState[]>([])
   const [isTouch, setIsTouch]         = useState(false)
-  // [P5-1] Custom decay rate — only sent when user is Pro
-  const [decayRateDays, setDecayRateDays] = useState<number>(90)
+  const isPro = plan === "pro"
+
+  // [P5-1] Custom decay rate — only sent when user is Pro.
+  // [P8-3] Initialise from folder's defaultDecayRateDays if set; else plan default (90d).
+  const folderDefault = isPro && currentFolder?.defaultDecayRateDays
+    ? currentFolder.defaultDecayRateDays
+    : 90
+  const [decayRateDays, setDecayRateDays] = useState<number>(folderDefault)
   const [showDecayPicker, setShowDecayPicker] = useState(false)
 
-  const isPro = plan === "pro"
+  // [P8-3] When folder changes, update the decay rate picker to the folder's default (Pro).
+  useEffect(() => {
+    if (!isPro) return
+    const folderRate = currentFolder?.defaultDecayRateDays
+    if (folderRate && DECAY_RATE_OPTIONS.some((o) => o.value === folderRate)) {
+      setDecayRateDays(folderRate)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFolder?.defaultDecayRateDays, isPro])
 
   useEffect(() => {
     setIsTouch(window.matchMedia("(pointer: coarse)").matches)
@@ -184,6 +200,11 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
           <ClockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
           <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
             Decay rate for new uploads
+            {currentFolder?.defaultDecayRateDays && (
+              <span className="ml-1 text-xs" style={{ color: "var(--text-dim)" }}>
+                (folder default)
+              </span>
+            )}
           </span>
           <div className="relative ml-auto">
             <button
