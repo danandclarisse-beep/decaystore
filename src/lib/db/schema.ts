@@ -31,6 +31,7 @@ export const users = pgTable("users", {
   storageUsedBytes:      bigint("storage_used_bytes", { mode: "number" }).notNull().default(0),
   createdAt:             timestamp("created_at").defaultNow().notNull(),
   updatedAt:             timestamp("updated_at").defaultNow().notNull(),
+  emailDigestEnabled:    boolean("email_digest_enabled").notNull().default(true),
 })
 
 // ─── Folders ──────────────────────────────────────────────
@@ -40,7 +41,8 @@ export const folders = pgTable("folders", {
   parentId:  uuid("parent_id"),
   name:      text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedAt:            timestamp("updated_at").defaultNow().notNull(),
+  defaultDecayRateDays: integer("default_decay_rate_days"),
 })
 
 // ─── Files ────────────────────────────────────────────────
@@ -62,11 +64,13 @@ export const files = pgTable("files", {
   warnedAt:             timestamp("warned_at"),
   deletedAt:            timestamp("deleted_at"),
   isPublic:             boolean("is_public").notNull().default(false),
+  publicDownloadCount:  integer("public_download_count").notNull().default(0),
   description:          text("description"),
   // [P6-3] Tracks whether the client completed the R2 PUT after receiving
   // the presigned URL. Unconfirmed records older than 1 hour are ghost files
   // and are pruned by the decay cron. Default false; set true by POST /api/files/[id]/confirm.
   uploadConfirmed:      boolean("upload_confirmed").notNull().default(false),
+  tags:                 text("tags").array().notNull().default([]),
 })
 
 // ─── File Versions ────────────────────────────────────────
@@ -106,13 +110,24 @@ export const apiKeys = pgTable("api_keys", {
   createdAt:  timestamp("created_at").defaultNow().notNull(),
 })
 
+// ─── Storage Snapshots ────────────────────────────────────
+// [P9-3] Daily cron writes a snapshot of storage used per user
+export const storageSnapshots = pgTable("storage_snapshots", {
+  id:               uuid("id").primaryKey().defaultRandom(),
+  userId:           uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  storageUsedBytes: bigint("storage_used_bytes", { mode: "number" }).notNull(),
+  fileCount:        integer("file_count").notNull().default(0),
+  snapshotDate:     timestamp("snapshot_date").defaultNow().notNull(),
+})
+
 // ─── Types ────────────────────────────────────────────────
-export type User        = typeof users.$inferSelect
-export type NewUser     = typeof users.$inferInsert
-export type Folder      = typeof folders.$inferSelect
-export type NewFolder   = typeof folders.$inferInsert
-export type File        = typeof files.$inferSelect
-export type NewFile     = typeof files.$inferInsert
-export type FileVersion = typeof fileVersions.$inferSelect
-export type DecayEvent  = typeof decayEvents.$inferSelect
-export type ApiKey      = typeof apiKeys.$inferSelect
+export type User            = typeof users.$inferSelect
+export type NewUser         = typeof users.$inferInsert
+export type Folder          = typeof folders.$inferSelect
+export type NewFolder       = typeof folders.$inferInsert
+export type File            = typeof files.$inferSelect
+export type NewFile         = typeof files.$inferInsert
+export type FileVersion     = typeof fileVersions.$inferSelect
+export type DecayEvent      = typeof decayEvents.$inferSelect
+export type ApiKey          = typeof apiKeys.$inferSelect
+export type StorageSnapshot = typeof storageSnapshots.$inferSelect

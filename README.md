@@ -472,41 +472,41 @@ These are not enhancements — they are obligations. Paying users see these feat
 
 ---
 
-### Phase 7 — Power User Features (UX at scale)
-*Users with 50–10,000 files need tools to manage them. These are baseline expectations at Starter and Pro scale.*
+### Phase 7 — Power User Features (UX at scale) ✅
+*All power-user features delivered. Files changed: 4 new/modified.*
 
-#### [P7-1] Search and filter on the file grid
-**What:** Files are sorted by decay score only. With 50+ files there is no way to find anything.
-**Build:**
-- Add a search input above the file grid that filters `localFiles` client-side by `originalFilename` (instant, no API call)
-- Add a sort dropdown: Decay (default) / Name A–Z / Size / Upload date
-- Add a filter pill row: All / Images / Documents / Video / Audio / Archives
-- All filters are client-side only — no API changes required
+#### [P7-1] Search and filter on the file grid ✅
 
-**Files:** `FileGrid.tsx`
+- **`src/components/dashboard/FileGrid.tsx`** — Search input filters `localFiles` client-side by `originalFilename` (instant, no API call). Sort dropdown: Decay (default) / Name A–Z / Size / Upload date. Filter pill row: All / Images / Documents / Video / Audio / Archives — MIME-type categorisation via `getCategory()` helper. All filters combined via `useMemo` pipeline. Live count shows `filtered/total` files.
 
-#### [P7-2] Bulk file actions
-**What:** Every action (renew, delete, move) is per-file. At Pro scale (10,000 files) this is unusable.
-**Build:**
-- Add checkbox selection to file cards (appears on hover or long-press)
-- Show a sticky bulk action bar at the bottom of the viewport when ≥1 file is selected: "X selected — Renew all / Move to folder / Delete all"
-- Bulk renew: `Promise.all()` of `PATCH /api/files/[id]` calls with a concurrency cap
-- Bulk delete: same pattern with confirmation dialog
-- Bulk move: single folder picker, then batch move calls
+#### [P7-2] Bulk file actions ✅
 
-**Files:** `FileGrid.tsx`
+- **`src/components/dashboard/FileGrid.tsx`** — Checkbox on each file card (appears on hover; always visible when any file is selected). Sticky bulk action bar at bottom of viewport when ≥1 file selected: selected count, Select All/None toggle, **Renew all**, **Move to folder** (folder picker modal), **Delete all** (with inline confirmation step). All bulk ops use `Promise.all()` with a concurrency cap of 4. Separate bulk-move modal mirrors the per-file move modal. `Array.from(selectedIds)` used throughout for ES2015+ compatibility.
 
-#### [P7-3] Public / shared file links (Pro)
-**What:** The `isPublic` boolean is already in the schema but is never wired up. Public sharing is the viral mechanic of DecayStore — a file that self-destructs if nobody opens it.
-**Build:**
-- Toggle in File Details modal: "Share publicly" — updates `isPublic` via `PATCH /api/files/[id]`
-- Generate a stable public URL: `/share/[fileId]`
-- `src/app/share/[fileId]/page.tsx` — server-rendered page that serves the file without auth, resets decay clock on access, shows file metadata and a download button
-- Rate-limit public downloads (per IP, 10 req/min)
-- Show download count in Details panel (add `publicDownloadCount` to files table)
-- Gate to Pro plan only
+#### [P7-3] Public / shared file links (Pro) ✅
 
-**Files:** `schema.ts`, `src/app/share/[fileId]/page.tsx` (new), `src/app/api/files/[id]/route.ts`, `FileGrid.tsx`
+- **`src/lib/db/schema.ts`** — `publicDownloadCount integer default 0` added to `files` table. Also pre-added schema columns for Phases 8–9: `emailDigestEnabled` (users), `defaultDecayRateDays` (folders), `tags text[]` (files), and new `storageSnapshots` table.
+- **`src/app/share/[fileId]/page.tsx`** *(new)* — Server-rendered public share page at `/share/[fileId]`. Per-IP rate limit (10 req/min). Resets decay clock and increments `publicDownloadCount` on every access. Shows file icon, name, size, MIME type, decay health strip, download count, upload date, and a presigned download button. Generates Open Graph metadata. No auth required.
+- **`src/app/api/files/[id]/route.ts`** — PATCH now accepts optional JSON body. If `{ isPublic: boolean }` is present, toggles public status (Pro-only, returns 403 otherwise). Falls through to standard renewal if no body or body contains no `isPublic` field.
+- **`src/components/dashboard/FileGrid.tsx`** — Share toggle and Copy link in `⋯` overflow menu (Pro only). Details modal Visibility row becomes an interactive toggle (Pro): click to make public/private, inline Copy link button when public.
+
+### Migration required
+
+Run before deploying Phase 7:
+
+```sql
+ALTER TABLE files ADD COLUMN public_download_count integer NOT NULL DEFAULT 0;
+ALTER TABLE files ADD COLUMN tags text[] NOT NULL DEFAULT '{}';
+ALTER TABLE users ADD COLUMN email_digest_enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE folders ADD COLUMN default_decay_rate_days integer;
+CREATE TABLE storage_snapshots (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  storage_used_bytes BIGINT NOT NULL,
+  file_count       INTEGER NOT NULL DEFAULT 0,
+  snapshot_date    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
 
 ---
 
@@ -576,7 +576,7 @@ These are not enhancements — they are obligations. Paying users see these feat
 |---|---|---|---|
 | P5 | Plan integrity — fix advertised features | Pro, Starter | 🔴 Must ship |
 | P6 | Upgrade & onboarding experience | All | 🔴 Must ship |
-| P7 | Power user features at scale | Starter, Pro | 🟡 High |
+| P7 | Power user features at scale | Starter, Pro | ✅ Done |
 | P8 | Transparency & trust | Starter, Pro | 🟡 High |
 | P9 | Polish & retention | All, Pro | 🟢 Nice to have |
 

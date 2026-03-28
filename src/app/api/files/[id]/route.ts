@@ -39,19 +39,43 @@ export async function GET(_req: Request, { params }: Params) {
   }
 }
 
-// ─── PATCH /api/files/[id] — renew file ───────────────────
-export async function PATCH(_req: Request, { params }: Params) {
+// ─── PATCH /api/files/[id] — renew file or update metadata ──
+// Accepts an optional JSON body. If { isPublic: boolean } is present,
+// toggles the public flag (Pro only). Otherwise performs a standard renewal.
+export async function PATCH(req: Request, { params }: Params) {
   try {
     const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const user = await getOrCreateUser()
-    const result = await renewFile(params.id, user.id)
 
+    // Check for a JSON body — tolerates empty bodies (plain renewal)
+    let body: Record<string, unknown> = {}
+    try {
+      const text = await req.text()
+      if (text) body = JSON.parse(text)
+    } catch { /* no body or non-JSON — treat as plain renew */ }
+
+    // ── [P7-3] isPublic toggle ─────────────────────────────
+    if (typeof body.isPublic === "boolean") {
+      if (user.plan !== "pro")
+        return NextResponse.json({ error: "Pro plan required to share files publicly" }, { status: 403 })
+
+      const file = await db.query.files.findFirst({
+        where: and(eq(files.id, params.id), eq(files.userId, user.id)),
+      })
+      if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
+
+      await db.update(files).set({ isPublic: body.isPublic }).where(eq(files.id, file.id))
+      return NextResponse.json({ success: true, isPublic: body.isPublic })
+    }
+
+    // ── Default: renew ─────────────────────────────────────
+    const result = await renewFile(params.id, user.id)
     return NextResponse.json(result)
   } catch (err) {
     console.error("[PATCH /api/files/[id]]", err)
-    return NextResponse.json({ error: "Failed to renew file" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to update file" }, { status: 500 })
   }
 }
 

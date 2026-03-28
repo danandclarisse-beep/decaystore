@@ -1,21 +1,54 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import {
   RefreshCwIcon, Trash2Icon, DownloadIcon, ClockIcon,
   FolderIcon, PencilIcon, FolderInputIcon, GitBranchIcon,
   UploadIcon, XIcon, ChevronDownIcon, EyeIcon, MoreHorizontalIcon,
   AlertTriangleIcon, CheckIcon, UploadCloudIcon, InfoIcon,
+  SearchIcon, SlidersHorizontalIcon, Share2Icon, LinkIcon, GlobeIcon, LockIcon,
+  CheckSquareIcon, SquareIcon, SquareSlashIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, formatDateTime, getMimeTypeIcon } from "@/lib/utils"
 import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion, calculateDecayScore } from "@/lib/decay-utils"
 import type { File, Folder, FileVersion } from "@/lib/db/schema"
+
+// ─── MIME-type category helpers ───────────────────────────
+type FileCategory = "all" | "images" | "documents" | "video" | "audio" | "archives"
+type SortKey = "decay" | "name" | "size" | "date"
+
+function getCategory(mimeType: string): FileCategory {
+  if (mimeType.startsWith("image/")) return "images"
+  if (mimeType.startsWith("video/")) return "video"
+  if (mimeType.startsWith("audio/")) return "audio"
+  if (
+    mimeType === "application/pdf" ||
+    mimeType.startsWith("text/") ||
+    mimeType.includes("word") ||
+    mimeType.includes("spreadsheet") ||
+    mimeType.includes("presentation") ||
+    mimeType === "application/msword" ||
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "application/vnd.ms-powerpoint"
+  )
+    return "documents"
+  if (
+    mimeType === "application/zip" ||
+    mimeType === "application/x-tar" ||
+    mimeType === "application/x-rar-compressed" ||
+    mimeType === "application/x-7z-compressed" ||
+    mimeType === "application/gzip"
+  )
+    return "archives"
+  return "documents" // fallback — shows under Documents
+}
 
 interface Props {
   files: File[]
   folders: Folder[]
   allFolders: Folder[]
   currentFolderId: string | null
+  userPlan?: "free" | "starter" | "pro"
   onRefresh: () => void
   onOpenFolder: (folder: Folder) => void
   /** Called when a file is renewed — fires a toast in the parent */
@@ -27,7 +60,7 @@ interface Props {
 type ActionKey = string
 
 export function FileGrid({
-  files, folders, allFolders, currentFolderId,
+  files, folders, allFolders, currentFolderId, userPlan,
   onRefresh, onOpenFolder, onRenewedToast, renewFileRef,
 }: Props) {
   const [localFiles, setLocalFiles]             = useState<File[]>(files)
@@ -51,6 +84,21 @@ export function FileGrid({
   const [renewedId, setRenewedId]               = useState<string | null>(null)
   const [detailsFile, setDetailsFile]           = useState<File | null>(null)
   const renameFreshRef = useRef(false)
+
+  // ── [P7-1] Search / sort / filter state ───────────────────
+  const [searchQuery, setSearchQuery]     = useState("")
+  const [sortKey, setSortKey]             = useState<SortKey>("decay")
+  const [filterCat, setFilterCat]         = useState<FileCategory>("all")
+
+  // ── [P7-2] Bulk selection state ────────────────────────────
+  const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
+  const [bulkMoving, setBulkMoving]           = useState(false)
+  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false)
+  const [bulkLoading, setBulkLoading]         = useState(false)
+
+  // ── [P7-3] Public share state ──────────────────────────────
+  const [togglingPublic, setTogglingPublic]   = useState(false)
+  const [copiedLink, setCopiedLink]           = useState(false)
 
   function startLoading(key: ActionKey) { setLoadingKeys((p) => new Set(p).add(key)) }
   function stopLoading(key: ActionKey)  { setLoadingKeys((p) => { const s = new Set(p); s.delete(key); return s }) }
@@ -205,7 +253,79 @@ export function FileGrid({
     } finally { setUploadingVersion(false); setVersionProgress(0) }
   }
 
-  const sorted = [...localFiles].sort((a, b) => b.decayScore - a.decayScore)
+  // ── [P7-1] Search → filter → sort pipeline ────────────────
+  const displayFiles = useMemo(() => {
+    let result = localFiles
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter((f) => f.originalFilename.toLowerCase().includes(q))
+    }
+    if (filterCat !== "all") {
+      result = result.filter((f) => getCategory(f.mimeType) === filterCat)
+    }
+    return [...result].sort((a, b) => {
+      switch (sortKey) {
+        case "name":  return a.originalFilename.localeCompare(b.originalFilename)
+        case "size":  return b.sizeBytes - a.sizeBytes
+        case "date":  return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+        default:      return b.decayScore - a.decayScore
+      }
+    })
+  }, [localFiles, searchQuery, filterCat, sortKey])
+
+  // ── [P7-2] Bulk helpers ────────────────────────────────────
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  function selectAll()      { setSelectedIds(new Set(displayFiles.map((f) => f.id))) }
+  function clearSelection() { setSelectedIds(new Set()) }
+
+  async function handleBulkRenew() {
+    setBulkLoading(true)
+    const ids = Array.from(selectedIds)
+    for (let i = 0; i < ids.length; i += 4)
+      await Promise.all(ids.slice(i, i + 4).map((id) => fetch(`/api/files/${id}`, { method: "PATCH" })))
+    clearSelection(); setBulkLoading(false); onRefresh()
+  }
+
+  async function handleBulkDelete() {
+    setBulkLoading(true); setBulkConfirmDelete(false)
+    const ids = Array.from(selectedIds)
+    for (let i = 0; i < ids.length; i += 4)
+      await Promise.all(ids.slice(i, i + 4).map((id) => fetch(`/api/files/${id}`, { method: "DELETE" })))
+    clearSelection(); setBulkLoading(false); onRefresh()
+  }
+
+  async function handleBulkMove(folderId: string | null) {
+    setBulkLoading(true); setBulkMoving(false)
+    const ids = Array.from(selectedIds)
+    for (let i = 0; i < ids.length; i += 4)
+      await Promise.all(ids.slice(i, i + 4).map((id) =>
+        fetch(`/api/files/${id}/move`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folderId }) })
+      ))
+    clearSelection(); setBulkLoading(false); onRefresh()
+  }
+
+  // ── [P7-3] Public share helpers ────────────────────────────
+  async function handleTogglePublic(file: File) {
+    setTogglingPublic(true)
+    const newVal = !file.isPublic
+    try {
+      const res = await fetch(`/api/files/${file.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: newVal }),
+      })
+      if (res.ok) {
+        setLocalFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, isPublic: newVal } : f))
+        setDetailsFile((d) => d?.id === file.id ? { ...d, isPublic: newVal } : d)
+      }
+    } finally { setTogglingPublic(false) }
+  }
+
+  function copyShareLink(fileId: string) {
+    navigator.clipboard.writeText(`${window.location.origin}/share/${fileId}`)
+      .then(() => { setCopiedLink(true); setTimeout(() => setCopiedLink(false), 2000) })
+  }
 
   // ─── Rich empty state ──────────────────────────────────────────
   if (folders.length === 0 && files.length === 0) {
@@ -252,20 +372,69 @@ export function FileGrid({
     )
   }
 
+  const CAT_LABELS: Record<FileCategory, string> = {
+    all: "All", images: "Images", documents: "Documents",
+    video: "Video", audio: "Audio", archives: "Archives",
+  }
+
   return (
     <>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          {folders.length > 0 && `${folders.length} folder${folders.length !== 1 ? "s" : ""}  · `}
-          {files.length} file{files.length !== 1 ? "s" : ""}
-        </p>
-        <button
-          onClick={onRefresh}
-          className="action-btn text-xs flex items-center gap-1.5 px-3 py-1.5"
-          style={{ border: "1px solid var(--border)", borderRadius: "8px" }}
-        >
-          <RefreshCwIcon className="w-3 h-3" /> Refresh
-        </button>
+      {/* ── [P7-1] Search / Sort / Filter toolbar ── */}
+      <div className="mb-4 space-y-2">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--text-dim)" }} />
+            <input
+              type="text"
+              placeholder="Search files…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg outline-none"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text)" }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--text-dim)" }}>
+                <XIcon className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className="text-xs px-2 py-1.5 rounded-lg outline-none cursor-pointer"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text)" }}
+          >
+            <option value="decay">↓ Decay</option>
+            <option value="name">A–Z Name</option>
+            <option value="size">↓ Size</option>
+            <option value="date">↓ Date</option>
+          </select>
+          <button onClick={onRefresh} className="action-btn text-xs flex items-center gap-1.5 px-3 py-1.5" style={{ border: "1px solid var(--border)", borderRadius: "8px" }}>
+            <RefreshCwIcon className="w-3 h-3" />
+          </button>
+        </div>
+        {/* Filter pills */}
+        <div className="flex gap-1.5 flex-wrap">
+          {(Object.keys(CAT_LABELS) as FileCategory[]).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilterCat(cat)}
+              className="text-xs px-2.5 py-1 rounded-full transition-colors"
+              style={{
+                background: filterCat === cat ? "var(--accent)" : "var(--bg-elevated)",
+                color: filterCat === cat ? "#000" : "var(--text-muted)",
+                border: `1px solid ${filterCat === cat ? "var(--accent)" : "var(--border)"}`,
+                fontWeight: filterCat === cat ? 600 : 400,
+              }}
+            >
+              {CAT_LABELS[cat]}
+            </button>
+          ))}
+          <span className="ml-auto text-xs self-center" style={{ color: "var(--text-dim)" }}>
+            {folders.length > 0 && `${folders.length} folder${folders.length !== 1 ? "s" : ""} · `}
+            {displayFiles.length}/{files.length} file{files.length !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -294,9 +463,7 @@ export function FileGrid({
         ))}
 
         {/* File cards */}
-        {sorted.map((file) => {
-          // ── Live decay: always compute from lastAccessedAt so the timer
-          //    reflects real elapsed time, not the last cron-written score.
+        {displayFiles.map((file) => {
           const liveDecayScore      = calculateDecayScore(new Date(file.lastAccessedAt), file.decayRateDays)
           const decayColor          = getDecayColor(liveDecayScore)
           const decayLabel          = getDecayLabel(liveDecayScore)
@@ -309,19 +476,31 @@ export function FileGrid({
           const isRenewing          = isLoading(file.id + "-renew")
           const isConfirmingDelete  = confirmState?.id === file.id && confirmState.action === "delete"
           const isRenewed           = renewedId === file.id
+          const isSelected          = selectedIds.has(file.id)
 
           return (
             <div
               key={file.id}
-              className="rounded-xl p-4 sm:p-5 flex flex-col gap-3 transition-all"
+              className="rounded-xl p-4 sm:p-5 flex flex-col gap-3 transition-all group/card relative"
               style={{
                 background: "var(--bg-card)",
-                border: `1px solid ${isExpiring ? "rgba(239,68,68,0.3)" : isCritical ? "rgba(249,115,22,0.2)" : "var(--border)"}`,
-                boxShadow: isExpiring ? "0 0 20px rgba(239,68,68,0.05)" : "none",
+                border: `1px solid ${isSelected ? "var(--accent)" : isExpiring ? "rgba(239,68,68,0.3)" : isCritical ? "rgba(249,115,22,0.2)" : "var(--border)"}`,
+                boxShadow: isSelected ? "0 0 0 2px var(--accent-dim)" : isExpiring ? "0 0 20px rgba(239,68,68,0.05)" : "none",
                 opacity: isDeleting ? 0.5 : 1,
                 transition: "opacity 0.2s",
               }}
             >
+              {/* [P7-2] Checkbox — shows on hover or when anything is selected */}
+              <button
+                onClick={() => toggleSelect(file.id)}
+                className={`absolute top-3 left-3 z-10 rounded-md transition-opacity ${selectedIds.size > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+                title={isSelected ? "Deselect" : "Select"}
+              >
+                {isSelected
+                  ? <CheckSquareIcon className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                  : <SquareIcon className="w-4 h-4" style={{ color: "var(--text-dim)" }} />
+                }
+              </button>
               {/* File info row */}
               <div className="flex items-start gap-3">
                 <span className="text-xl sm:text-2xl leading-none mt-0.5 shrink-0">
@@ -524,6 +703,25 @@ export function FileGrid({
                           >
                             <InfoIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Details
                           </button>
+                          {userPlan === "pro" && (
+                            <button
+                              onClick={() => { handleTogglePublic(file); setOpenMenuId(null) }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                            >
+                              {file.isPublic
+                                ? <><LockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Make private</>
+                                : <><GlobeIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Share publicly</>
+                              }
+                            </button>
+                          )}
+                          {userPlan === "pro" && file.isPublic && (
+                            <button
+                              onClick={() => { copyShareLink(file.id); setOpenMenuId(null) }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                            >
+                              <LinkIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Copy link
+                            </button>
+                          )}
                           <div style={{ height: "1px", background: "var(--border-subtle)", margin: "4px 0" }} />
                           <button
                             onClick={() => { setConfirmState({ id: file.id, action: "delete" }); setOpenMenuId(null) }}
@@ -542,6 +740,90 @@ export function FileGrid({
           )
         })}
       </div>
+
+      {/* ── [P7-2] Bulk action bar ── */}
+      {selectedIds.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", backdropFilter: "blur(12px)" }}
+        >
+          <button onClick={clearSelection} className="p-1 rounded-md" style={{ color: "var(--text-dim)" }} title="Clear selection">
+            <XIcon className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-semibold px-2" style={{ color: "var(--text-muted)" }}>
+            {selectedIds.size} selected
+          </span>
+          <div style={{ width: "1px", height: 20, background: "var(--border)" }} />
+          <button
+            onClick={() => { if (selectedIds.size < displayFiles.length) selectAll(); else clearSelection() }}
+            className="action-btn text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1.5"
+          >
+            <SquareSlashIcon className="w-3.5 h-3.5" />
+            {selectedIds.size < displayFiles.length ? "All" : "None"}
+          </button>
+          <button
+            onClick={handleBulkRenew}
+            disabled={bulkLoading}
+            className="action-btn-green text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-60"
+          >
+            <RefreshCwIcon className="w-3.5 h-3.5" /> Renew all
+          </button>
+          <button
+            onClick={() => setBulkMoving(true)}
+            disabled={bulkLoading}
+            className="action-btn text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-60"
+          >
+            <FolderInputIcon className="w-3.5 h-3.5" /> Move to
+          </button>
+          {bulkConfirmDelete ? (
+            <>
+              <span className="text-xs" style={{ color: "#ef4444" }}>Delete {selectedIds.size}?</span>
+              <button onClick={handleBulkDelete} className="text-xs px-2.5 py-1.5 rounded-lg font-semibold" style={{ background: "#ef4444", color: "#fff" }}>
+                Yes
+              </button>
+              <button onClick={() => setBulkConfirmDelete(false)} className="action-btn p-1.5 rounded-lg">
+                <XIcon className="w-3 h-3" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setBulkConfirmDelete(true)}
+              disabled={bulkLoading}
+              className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-60"
+              style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}
+            >
+              <Trash2Icon className="w-3.5 h-3.5" /> Delete all
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── [P7-2] Bulk move modal ── */}
+      {bulkMoving && (
+        <Modal title={`Move ${selectedIds.size} file${selectedIds.size !== 1 ? "s" : ""}`} onClose={() => setBulkMoving(false)}>
+          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            <button
+              onClick={() => handleBulkMove(null)}
+              disabled={bulkLoading}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors disabled:opacity-50"
+              style={{ background: "var(--bg-hover)", color: "var(--text-muted)" }}
+            >
+              <FolderIcon className="w-4 h-4 shrink-0" style={{ color: "var(--text-dim)" }} /> Root (My Files)
+            </button>
+            {allFolders.map((folder) => (
+              <button
+                key={folder.id}
+                onClick={() => handleBulkMove(folder.id)}
+                disabled={bulkLoading}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors disabled:opacity-50"
+                style={{ background: "var(--bg-hover)", color: "var(--text-muted)" }}
+              >
+                <FolderIcon className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} /> {folder.name}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {/* Move modal */}
       {movingFile && (
@@ -832,7 +1114,37 @@ export function FileGrid({
               <Row label="Decay rate"     value={`${detailsFile.decayRateDays} days to expiry`} mono />
               <Row label="Decay score"    value={`${(liveScore * 100).toFixed(2)}%`} mono />
               <Row label="Time remaining" value={timeLeft} mono />
-              <Row label="Visibility"     value={detailsFile.isPublic ? "Public" : "Private"} />
+              <Row label="Visibility" value={
+                userPlan === "pro" ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleTogglePublic(detailsFile)}
+                      disabled={togglingPublic}
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold transition-colors disabled:opacity-60"
+                      style={{
+                        background: detailsFile.isPublic ? "rgba(52,211,153,0.12)" : "var(--bg-hover)",
+                        color: detailsFile.isPublic ? "#34d399" : "var(--text-muted)",
+                        border: `1px solid ${detailsFile.isPublic ? "rgba(52,211,153,0.3)" : "var(--border)"}`,
+                      }}
+                    >
+                      {detailsFile.isPublic ? <GlobeIcon className="w-3 h-3" /> : <LockIcon className="w-3 h-3" />}
+                      {detailsFile.isPublic ? "Public" : "Private"}
+                    </button>
+                    {detailsFile.isPublic && (
+                      <button
+                        onClick={() => copyShareLink(detailsFile.id)}
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-colors"
+                        style={{ background: "var(--bg-hover)", color: copiedLink ? "#34d399" : "var(--text-muted)", border: "1px solid var(--border)" }}
+                      >
+                        {copiedLink ? <CheckIcon className="w-3 h-3" /> : <LinkIcon className="w-3 h-3" />}
+                        {copiedLink ? "Copied!" : "Copy link"}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span>{detailsFile.isPublic ? "Public" : "Private"}</span>
+                )
+              } />
               {detailsFile.description && (
                 <Row label="Description"  value={detailsFile.description} />
               )}
