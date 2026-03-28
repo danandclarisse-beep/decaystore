@@ -5,10 +5,10 @@ import {
   RefreshCwIcon, Trash2Icon, DownloadIcon, ClockIcon,
   FolderIcon, PencilIcon, FolderInputIcon, GitBranchIcon,
   UploadIcon, XIcon, ChevronDownIcon, EyeIcon, MoreHorizontalIcon,
-  AlertTriangleIcon, CheckIcon, UploadCloudIcon,
+  AlertTriangleIcon, CheckIcon, UploadCloudIcon, InfoIcon,
 } from "lucide-react"
-import { formatBytes, formatRelativeTime, getMimeTypeIcon } from "@/lib/utils"
-import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion } from "@/lib/decay-utils"
+import { formatBytes, formatRelativeTime, formatDateTime, getMimeTypeIcon } from "@/lib/utils"
+import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion, calculateDecayScore } from "@/lib/decay-utils"
 import type { File, Folder, FileVersion } from "@/lib/db/schema"
 
 interface Props {
@@ -49,6 +49,7 @@ export function FileGrid({
   const [openMenuId, setOpenMenuId]             = useState<string | null>(null)
   const [confirmState, setConfirmState]         = useState<{ id: string; action: "delete" | "deleteVersion"; versionId?: string } | null>(null)
   const [renewedId, setRenewedId]               = useState<string | null>(null)
+  const [detailsFile, setDetailsFile]           = useState<File | null>(null)
   const renameFreshRef = useRef(false)
 
   function startLoading(key: ActionKey) { setLoadingKeys((p) => new Set(p).add(key)) }
@@ -294,11 +295,14 @@ export function FileGrid({
 
         {/* File cards */}
         {sorted.map((file) => {
-          const decayColor          = getDecayColor(file.decayScore)
-          const decayLabel          = getDecayLabel(file.decayScore)
+          // ── Live decay: always compute from lastAccessedAt so the timer
+          //    reflects real elapsed time, not the last cron-written score.
+          const liveDecayScore      = calculateDecayScore(new Date(file.lastAccessedAt), file.decayRateDays)
+          const decayColor          = getDecayColor(liveDecayScore)
+          const decayLabel          = getDecayLabel(liveDecayScore)
           const timeLeft            = getTimeUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)
-          const isCritical          = file.decayScore >= 0.75
-          const isExpiring          = file.decayScore >= 0.9
+          const isCritical          = liveDecayScore >= 0.75
+          const isExpiring          = liveDecayScore >= 0.9
           const isRenaming          = renamingId === file.id
           const isDeleting          = isLoading(file.id + "-delete")
           const isDownloading       = isLoading(file.id + "-download")
@@ -388,14 +392,14 @@ export function FileGrid({
                     style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}
                   >
                     <ClockIcon className="w-3 h-3" />
-                    {(isRenewed || file.decayScore === 0) ? `${file.decayRateDays}d left` : `${timeLeft} left`}
+                    {isRenewed ? `${file.decayRateDays}d left` : `${timeLeft} left`}
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
                   <div
                     className={`h-full rounded-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
                     style={{
-                      width: isRenewed ? "0%" : `${file.decayScore * 100}%`,
+                      width: isRenewed ? "0%" : `${liveDecayScore * 100}%`,
                       background: isRenewed ? "#34d399" : decayColor,
                     }}
                   />
@@ -513,6 +517,12 @@ export function FileGrid({
                             className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
                           >
                             <GitBranchIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Versions (v{file.currentVersionNumber})
+                          </button>
+                          <button
+                            onClick={() => { setDetailsFile(file); setOpenMenuId(null) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                          >
+                            <InfoIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Details
                           </button>
                           <div style={{ height: "1px", background: "var(--border-subtle)", margin: "4px 0" }} />
                           <button
@@ -757,6 +767,96 @@ export function FileGrid({
           </div>
         </Modal>
       )}
+      {/* Details modal */}
+      {detailsFile && (() => {
+        const liveScore = calculateDecayScore(new Date(detailsFile.lastAccessedAt), detailsFile.decayRateDays)
+        const color     = getDecayColor(liveScore)
+        const label     = getDecayLabel(liveScore)
+        const timeLeft  = getTimeUntilDeletion(new Date(detailsFile.lastAccessedAt), detailsFile.decayRateDays)
+
+        function Row({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+          return (
+            <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+              <span className="text-xs shrink-0" style={{ color: "var(--text-muted)", minWidth: 120 }}>{label}</span>
+              <span className="text-xs text-right break-all" style={{ color: "var(--text)", fontFamily: mono ? "DM Mono, monospace" : undefined }}>{value}</span>
+            </div>
+          )
+        }
+
+        return (
+          <Modal title="File details" onClose={() => setDetailsFile(null)}>
+            {/* Icon + name header */}
+            <div className="flex items-center gap-3 mb-4 pb-4" style={{ borderBottom: "1px solid var(--border)" }}>
+              <span className="text-3xl leading-none shrink-0">{getMimeTypeIcon(detailsFile.mimeType)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{detailsFile.originalFilename}</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>{detailsFile.mimeType}</p>
+              </div>
+            </div>
+
+            {/* Decay health strip */}
+            <div
+              className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3"
+              style={{ background: "var(--bg-elevated)", border: `1px solid ${color}33` }}
+            >
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold" style={{ color, fontFamily: "DM Mono, monospace" }}>{label} — {(liveScore * 100).toFixed(1)}% decayed</span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>{timeLeft} left</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${liveScore * 100}%`, background: color, transition: "width 0.4s" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Info rows */}
+            <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 280px)" }}>
+              <Row label="File name"      value={detailsFile.originalFilename} />
+              <Row label="Size"           value={formatBytes(detailsFile.sizeBytes)} mono />
+              <Row label="Type"           value={detailsFile.mimeType} mono />
+              <Row label="Version"        value={`v${detailsFile.currentVersionNumber}`} mono />
+              <Row label="Status"         value={
+                <span className="capitalize px-2 py-0.5 rounded-full text-xs font-semibold"
+                  style={{
+                    background: detailsFile.status === "active" ? "rgba(52,211,153,0.12)" : detailsFile.status === "critical" ? "rgba(239,68,68,0.12)" : "rgba(249,115,22,0.12)",
+                    color: detailsFile.status === "active" ? "#34d399" : detailsFile.status === "critical" ? "#ef4444" : "#f97316",
+                  }}
+                >{detailsFile.status}</span>
+              } />
+              <Row label="Uploaded"       value={formatDateTime(detailsFile.uploadedAt)} />
+              <Row label="Last accessed"  value={formatDateTime(detailsFile.lastAccessedAt)} />
+              {detailsFile.warnedAt && (
+                <Row label="Warned at"    value={formatDateTime(detailsFile.warnedAt)} />
+              )}
+              <Row label="Decay rate"     value={`${detailsFile.decayRateDays} days to expiry`} mono />
+              <Row label="Decay score"    value={`${(liveScore * 100).toFixed(2)}%`} mono />
+              <Row label="Time remaining" value={timeLeft} mono />
+              <Row label="Visibility"     value={detailsFile.isPublic ? "Public" : "Private"} />
+              {detailsFile.description && (
+                <Row label="Description"  value={detailsFile.description} />
+              )}
+              <Row label="File ID"        value={detailsFile.id} mono />
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex gap-2 mt-4 pt-4 shrink-0" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              <button
+                onClick={() => { handleRenew(detailsFile.id); setDetailsFile(null) }}
+                className="action-btn-green flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg font-medium"
+              >
+                <RefreshCwIcon className="w-3.5 h-3.5" /> Renew
+              </button>
+              <button
+                onClick={() => { handleDownload(detailsFile.id, detailsFile.originalFilename); setDetailsFile(null) }}
+                className="action-btn flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg font-medium"
+              >
+                <DownloadIcon className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+          </Modal>
+        )
+      })()}
     </>
   )
 }

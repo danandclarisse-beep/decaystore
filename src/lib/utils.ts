@@ -25,14 +25,29 @@ export function formatRelativeTime(date: Date | string): string {
   const now = Date.now()
   const then = new Date(date).getTime()
   const diffMs = now - then
+  const diffMins = Math.floor(diffMs / (1000 * 60))
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffDays === 0) return "Today"
+  if (diffMins < 1) return "Just now"
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays === 1) return "Yesterday"
-  if (diffDays < 7) return `${diffDays} days ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`
-  return `${Math.floor(diffDays / 365)} years ago`
+  if (diffDays < 7) return `${diffDays}d ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`
+  return `${Math.floor(diffDays / 365)}y ago`
+}
+
+export function formatDateTime(date: Date | string): string {
+  return new Date(date).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
 }
 
 export function getMimeTypeIcon(mimeType: string): string {

@@ -370,3 +370,21 @@ Contact: legal@decaystore.com
 ## License
 
 MIT
+
+---
+
+## Beta 9 — Live Decay Timer + File Details ✅
+
+### Changes
+
+- **[B9-1] Live decay score computed client-side** — Previously `FileGrid` rendered `file.decayScore` from the database, which is only updated by the nightly cron job. A file uploaded 10 hours ago would show "14d left" because the DB score was still `0`. Now every card computes `liveDecayScore = calculateDecayScore(lastAccessedAt, decayRateDays)` directly in the browser using the same formula as the server, so the timer is always accurate to the minute.
+- **[B9-2] `formatRelativeTime` upgraded to sub-day resolution** — Previously floored to whole days ("Today" for anything < 24h). Now shows minutes (`5m ago`), hours (`3h ago`), days (`2d ago`), weeks, months, and years — matching industry standard relative timestamps.
+- **[B9-3] `formatDateTime` added to `utils.ts`** — Full date + time formatter (`Mar 28, 2026, 4:32 PM`) used in the Details panel.
+- **[B9-4] File Details modal** — New "Details" option added to every file's `⋯` overflow menu. Opens a modal showing: file name, size, MIME type, version, status badge, uploaded date/time, last accessed date/time, warned-at date (if applicable), decay rate, live decay score %, time remaining, visibility, description, and file ID. Includes a live decay bar and quick Renew + Download actions in the footer.
+
+### Files changed
+
+| File | Route |
+|---|---|
+| `FileGrid.tsx` | `src/components/dashboard/FileGrid.tsx` |
+| `utils.ts` | `src/lib/utils.ts` |
