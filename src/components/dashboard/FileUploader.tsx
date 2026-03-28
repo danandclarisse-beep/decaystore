@@ -119,8 +119,13 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
       })
 
       // [P6-3] Confirm the upload so the file appears in the dashboard.
-      // Fire-and-forget — if this fails, the cron cleanup will prune the ghost record.
-      fetch(`/api/files/${newFile.id}/confirm`, { method: "POST" }).catch(() => {})
+      // Must be awaited — fetchAll() filters to uploadConfirmed=true, so calling
+      // onUploadComplete() before this resolves causes the file to not appear.
+      try {
+        await fetch(`/api/files/${newFile.id}/confirm`, { method: "POST" })
+      } catch {
+        // If confirm fails, cron cleanup will prune the ghost record.
+      }
 
       patchUpload(id, { status: "done", progress: 100 })
       onUploadComplete()
