@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import { FileUploader } from "@/components/dashboard/FileUploader"
 import { FileGrid } from "@/components/dashboard/FileGrid"
@@ -8,7 +8,8 @@ import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
-import { ApiKeysPanel } from "@/components/dashboard/ApiKeysPanel"
+import { UpgradeBanner } from "@/components/dashboard/UpgradeBanner"
+import { OnboardingBanner, DecayExplainer } from "@/components/dashboard/OnboardingBanner"
 import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import {
@@ -17,7 +18,15 @@ import {
 } from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
 
-export default function DashboardPage() {
+export default function DashboardPageWrapper() {
+  return (
+    <Suspense>
+      <DashboardPage />
+    </Suspense>
+  )
+}
+
+function DashboardPage() {
   const [files, setFiles]           = useState<File[]>([])
   const [folders, setFolders]       = useState<Folder[]>([])
   const [user, setUser]             = useState<User | null>(null)
@@ -142,6 +151,13 @@ export default function DashboardPage() {
 
         {/* Main content */}
         <main className="flex-1 min-w-0 space-y-4 sm:space-y-5 pb-24 lg:pb-0">
+
+          {/* [P6-1] Post-upgrade confirmation — shown once after checkout redirect */}
+          <UpgradeBanner user={user} />
+
+          {/* [P6-2] First-use onboarding — shown once to new users */}
+          {!loading && files.length === 0 && <OnboardingBanner />}
+
           {/* Storage */}
           <StorageBar
             used={storageUsed}
@@ -151,6 +167,9 @@ export default function DashboardPage() {
             fileLimit={fileLimit}
             loading={loading}
           />
+
+          {/* [P6-2] Decay explainer — collapsible, always available */}
+          {!loading && <DecayExplainer plan={user?.plan ?? "free"} />}
 
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1.5 text-sm flex-wrap">
@@ -276,9 +295,6 @@ export default function DashboardPage() {
               renewFileRef={renewFileRef}
             />
           )}
-
-          {/* [P5-2] API key management — Pro users only */}
-          <ApiKeysPanel isPro={user?.plan === "pro"} />
         </main>
       </div>
 

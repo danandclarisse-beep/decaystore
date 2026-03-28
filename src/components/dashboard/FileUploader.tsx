@@ -86,7 +86,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
         throw new Error(err.error ?? "Upload failed")
       }
 
-      const { uploadUrl } = await metaRes.json()
+      const { uploadUrl, file: newFile } = await metaRes.json()
 
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -101,6 +101,10 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId }: Props)
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream")
         xhr.send(file)
       })
+
+      // [P6-3] Confirm the upload so the file appears in the dashboard.
+      // Fire-and-forget — if this fails, the cron cleanup will prune the ghost record.
+      fetch(`/api/files/${newFile.id}/confirm`, { method: "POST" }).catch(() => {})
 
       patchUpload(id, { status: "done", progress: 100 })
       onUploadComplete()

@@ -63,6 +63,10 @@ export const files = pgTable("files", {
   deletedAt:            timestamp("deleted_at"),
   isPublic:             boolean("is_public").notNull().default(false),
   description:          text("description"),
+  // [P6-3] Tracks whether the client completed the R2 PUT after receiving
+  // the presigned URL. Unconfirmed records older than 1 hour are ghost files
+  // and are pruned by the decay cron. Default false; set true by POST /api/files/[id]/confirm.
+  uploadConfirmed:      boolean("upload_confirmed").notNull().default(false),
 })
 
 // ─── File Versions ────────────────────────────────────────

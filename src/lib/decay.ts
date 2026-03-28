@@ -4,7 +4,7 @@
 
 import { db } from "@/lib/db"
 import { files, fileVersions, decayEvents, users } from "@/lib/db/schema"
-import { eq, ne, and, inArray } from "drizzle-orm"
+import { eq, ne, and, inArray, lt } from "drizzle-orm"
 import { deleteFromR2 } from "@/lib/r2"
 import { sendDecayWarningEmail, sendDecayDeletedEmail } from "@/lib/email"
 import {
@@ -30,13 +30,37 @@ export async function runDecayCycle(): Promise<{
   warned: number
   critical: number
   deleted: number
+  ghostsPruned: number
   errors: string[]
 }> {
-  const stats = { processed: 0, warned: 0, critical: 0, deleted: 0, errors: [] as string[] }
+  const stats = { processed: 0, warned: 0, critical: 0, deleted: 0, ghostsPruned: 0, errors: [] as string[] }
 
-  // Fetch all active/warned/compressed files (no relation join to avoid type issues)
+  // [P6-3] Prune ghost upload records — files where the client never called /confirm
+  // and the record is older than 1 hour. These are the result of failed R2 PUTs.
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  const ghosts = await db.query.files.findMany({
+    where: and(
+      eq(files.uploadConfirmed, false),
+      lt(files.uploadedAt, oneHourAgo)
+    ),
+  })
+  for (const ghost of ghosts) {
+    try {
+      // Attempt R2 cleanup in case something was partially written
+      await deleteFromR2(ghost.r2Key).catch(() => {})
+      await db.delete(files).where(eq(files.id, ghost.id))
+      stats.ghostsPruned++
+    } catch (err) {
+      stats.errors.push(`Ghost ${ghost.id}: ${err instanceof Error ? err.message : "unknown"}`)
+    }
+  }
+
+  // Fetch all active/warned/compressed confirmed files
   const activeFiles = await db.query.files.findMany({
-    where: ne(files.status, "deleted"),
+    where: and(
+      ne(files.status, "deleted"),
+      eq(files.uploadConfirmed, true)
+    ),
   })
 
   // [P3-1] Pre-fetch all users referenced by these files in a single query.

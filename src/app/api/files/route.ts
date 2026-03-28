@@ -63,8 +63,13 @@ export async function GET() {
 
     const user = await getOrCreateUser()
 
+    // [P6-3] Only return confirmed uploads — ghost records from failed R2 PUTs are excluded.
     const userFiles = await db.query.files.findMany({
-      where: and(eq(files.userId, user.id), ne(files.status, "deleted")),
+      where: and(
+        eq(files.userId, user.id),
+        ne(files.status, "deleted"),
+        eq(files.uploadConfirmed, true)
+      ),
       orderBy: [desc(files.uploadedAt)],
     })
 
@@ -119,8 +124,6 @@ export async function POST(request: Request) {
     // [P5-1] Determine effective decay rate.
     // Pro users may pass a custom rate; it must be in the allowed set.
     // Non-Pro users always get their plan default — any client-supplied value is ignored.
-    // Typed as `number` (not the literal union from PLAN_DECAY_RATES) so the Pro
-    // override assignment below satisfies TypeScript.
     let decayRateDays: number = PLAN_DECAY_RATES[user.plan as keyof typeof PLAN_DECAY_RATES]
     if (user.plan === "pro" && requestedRate !== undefined) {
       if (!ALLOWED_DECAY_RATES.has(requestedRate)) {
@@ -166,7 +169,7 @@ export async function POST(request: Request) {
     // Generate presigned URL
     const r2Key     = buildR2Key(user.id, filename)
     const uploadUrl = await getPresignedUploadUrl(r2Key, contentType)
-    // Insert file record
+    // Insert file record — uploadConfirmed starts false until client calls /confirm
     const [newFile] = await db
       .insert(files)
       .values({
@@ -182,6 +185,7 @@ export async function POST(request: Request) {
         status: "active",
         decayScore: 0,
         currentVersionNumber: 1,
+        uploadConfirmed: false,
       })
       .returning()
 

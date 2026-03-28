@@ -635,3 +635,60 @@ CREATE INDEX api_keys_key_hash_idx ON api_keys(key_hash);
 | `src/components/dashboard/ApiKeysPanel.tsx` | **New** | — |
 | `src/components/dashboard/DashboardHeader.tsx` | Modified | — |
 | `src/lib/db/schema.ts` | Modified | — |
+
+---
+
+## Phase 6 — Upgrade & Onboarding Experience ✅
+
+*Paying users feel their upgrade immediately. New users understand the product from the first second.*
+
+### [P6-1] Post-upgrade confirmation banner
+
+- **`src/components/dashboard/UpgradeBanner.tsx`** *(new)* — Shown once when the user lands on `/dashboard?upgraded=true` after completing LemonSqueezy checkout. Detects the query param on mount, strips it from the URL without a reload, and renders a dismissible card listing every feature unlocked on the new plan. Dismissal is stored in `localStorage` keyed by `plan + userId` so it never re-appears for that upgrade. Free users never see it.
+
+- **`src/app/dashboard/page.tsx`** — Imports and renders `<UpgradeBanner user={user} />` above the storage bar. Wrapped in a `<Suspense>` boundary (required by `useSearchParams` in Next.js App Router). Imports and renders `<OnboardingBanner />` and `<DecayExplainer />`.
+
+### [P6-2] First-use onboarding banner + decay explainer
+
+- **`src/components/dashboard/OnboardingBanner.tsx`** *(new)* — Two exports:
+  - **`OnboardingBanner`** — Full-width welcome card shown once to new users (keyed to `localStorage: ds_onboarded_v1`). Explains the decay concept in plain language, shows the colour-coded decay scale (Fresh → Aging → Stale → Critical → Expiring), and lists the three core rules (download resets, renew resets, 100% = permanent delete). Dismissed via "Got it" or the ✕ button.
+  - **`DecayExplainer`** — Collapsible inline strip shown below the StorageBar on every dashboard load. Displays a gradient timeline bar with labelled milestones (warning email at 50%, critical at 90%, deletion at 100%) calibrated to the user's actual plan decay window. Three rule cards below. Free users see an upgrade nudge at the bottom.
+
+### [P6-3] Orphaned upload record cleanup
+
+- **`src/lib/db/schema.ts`** — `uploadConfirmed boolean default false` column added to the `files` table. Migration required (see below).
+
+- **`src/app/api/files/[id]/confirm/route.ts`** *(new)* — `POST /api/files/[id]/confirm`. Idempotent. Sets `uploadConfirmed = true` on the file after the client completes the R2 PUT. Returns `{ success: true }`.
+
+- **`src/app/api/files/route.ts`** — `GET /api/files` now filters `uploadConfirmed = true` so ghost records from failed R2 PUTs never appear in the dashboard. `POST /api/files` inserts with `uploadConfirmed: false`.
+
+- **`src/components/dashboard/FileUploader.tsx`** — Calls `POST /api/files/[id]/confirm` immediately after the R2 PUT resolves successfully. Fire-and-forget with `.catch(() => {})` — if this fails the cron cleanup handles it.
+
+- **`src/lib/decay.ts`** — `runDecayCycle()` now begins with a ghost-prune step: finds all `uploadConfirmed = false` records older than 1 hour, attempts R2 cleanup, and deletes them from the DB. Return type extended with `ghostsPruned: number`.
+
+### Migration required for Phase 6
+
+```sql
+-- Add uploadConfirmed column to files
+ALTER TABLE files ADD COLUMN upload_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Mark all existing files as confirmed (they were uploaded before this feature)
+UPDATE files SET upload_confirmed = TRUE;
+
+-- Index for the cron ghost-prune query
+CREATE INDEX files_upload_confirmed_idx ON files(upload_confirmed, uploaded_at)
+  WHERE upload_confirmed = FALSE;
+```
+
+### Files changed in Phase 6
+
+| File | Status | Route / Location |
+|---|---|---|
+| `src/components/dashboard/UpgradeBanner.tsx` | **New** | Dashboard component |
+| `src/components/dashboard/OnboardingBanner.tsx` | **New** | Dashboard component (2 exports) |
+| `src/app/dashboard/page.tsx` | Modified | `/dashboard` |
+| `src/app/api/files/[id]/confirm/route.ts` | **New** | `POST /api/files/[id]/confirm` |
+| `src/app/api/files/route.ts` | Modified | `GET` + `POST /api/files` |
+| `src/components/dashboard/FileUploader.tsx` | Modified | Calls `/confirm` after R2 PUT |
+| `src/lib/decay.ts` | Modified | Ghost-prune step in cron |
+| `src/lib/db/schema.ts` | Modified | `uploadConfirmed` column added |
