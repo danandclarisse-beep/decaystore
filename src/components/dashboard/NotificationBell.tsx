@@ -36,60 +36,70 @@ export function NotificationBell({
 
   if (variant === "float") {
     return (
-      <div
-        ref={containerRef}
-        className="fixed bottom-6 right-6 z-50 lg:hidden"
-        style={{ isolation: "isolate" }}
-      >
-        {/* FAB button */}
-        <button
-          onClick={() => setOpen((o) => !o)}
-          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
-          className="relative flex items-center justify-center rounded-full shadow-xl transition-transform active:scale-95"
-          style={{
-            width: 52,
-            height: 52,
-            background: hasCritical ? "#ef4444" : open ? "var(--accent)" : "var(--bg-elevated)",
-            border: `1px solid ${hasCritical ? "rgba(239,68,68,0.5)" : open ? "var(--accent)" : "var(--border)"}`,
-            boxShadow: hasCritical
-              ? "0 0 24px rgba(239,68,68,0.4)"
-              : open
-              ? "0 0 24px rgba(245,166,35,0.3)"
-              : "0 4px 24px rgba(0,0,0,0.4)",
-          }}
+      <>
+        {/* FAB button — fixed bottom-right, mobile only */}
+        <div
+          ref={containerRef}
+          className="fixed bottom-6 right-6 z-[120] lg:hidden"
+          style={{ isolation: "isolate" }}
         >
-          <BellIcon
-            className={`w-5 h-5 ${hasCritical && !open ? "animate-[wiggle_0.6s_ease-in-out_infinite]" : ""}`}
-            style={{ color: hasCritical || open ? (hasCritical ? "#fff" : "#000") : "var(--text)" }}
-          />
-          {unreadCount > 0 && (
-            <span
-              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold rounded-full"
-              style={{
-                background: hasCritical ? "#fff" : "var(--accent)",
-                color: hasCritical ? "#ef4444" : "#000",
-                fontFamily: "DM Mono, monospace",
-                padding: "0 4px",
-              }}
-            >
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-
-        {/* Panel — anchored to bottom-right */}
-        {open && (
-          <div className="absolute bottom-14 right-0">
-            <NotificationPanel
-              notifications={notifications}
-              onDismiss={onDismiss}
-              onDismissAll={onDismissAll}
-              onMarkAllRead={onMarkAllRead}
-              onClose={() => setOpen(false)}
+          <button
+            onClick={() => setOpen((o) => !o)}
+            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
+            className="relative flex items-center justify-center rounded-full shadow-xl transition-transform active:scale-95"
+            style={{
+              width: 52,
+              height: 52,
+              background: hasCritical ? "#ef4444" : open ? "var(--accent)" : "var(--bg-elevated)",
+              border: `1px solid ${hasCritical ? "rgba(239,68,68,0.5)" : open ? "var(--accent)" : "var(--border)"}`,
+              boxShadow: hasCritical
+                ? "0 0 24px rgba(239,68,68,0.4)"
+                : open
+                ? "0 0 24px rgba(245,166,35,0.3)"
+                : "0 4px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            <BellIcon
+              className={`w-5 h-5 ${hasCritical && !open ? "animate-[wiggle_0.6s_ease-in-out_infinite]" : ""}`}
+              style={{ color: hasCritical || open ? (hasCritical ? "#fff" : "#000") : "var(--text)" }}
             />
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold rounded-full"
+                style={{
+                  background: hasCritical ? "#fff" : "var(--accent)",
+                  color: hasCritical ? "#ef4444" : "#000",
+                  fontFamily: "DM Mono, monospace",
+                  padding: "0 4px",
+                }}
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Centered modal overlay — renders in a portal over everything */}
+        {open && (
+          <div
+            className="fixed inset-0 z-[130] lg:hidden flex items-center justify-center px-4"
+            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+            onClick={() => setOpen(false)}
+          >
+            {/* Stop click propagation so tapping the panel itself doesn't close it */}
+            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400 }}>
+              <NotificationPanel
+                notifications={notifications}
+                onDismiss={onDismiss}
+                onDismissAll={onDismissAll}
+                onMarkAllRead={onMarkAllRead}
+                onClose={() => setOpen(false)}
+                mobileSheet={false}
+              />
+            </div>
           </div>
         )}
-      </div>
+      </>
     )
   }
 

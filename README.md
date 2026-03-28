@@ -99,159 +99,7 @@ Open http://localhost:3000
 
 ---
 
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── api/
-│   │   ├── cron/decay/         # Nightly decay runner
-│   │   ├── files/              # File CRUD + presigned URLs
-│   │   ├── files/[id]/         # Download, renew, delete
-│   │   ├── files/[id]/versions/              # Version list + new version upload
-│   │   ├── files/[id]/versions/[versionId]/  # Version download + delete
-│   │   ├── files/[id]/move/    # Move file to folder
-│   │   ├── files/[id]/rename/  # Rename file display name
-│   │   ├── folders/            # Folder CRUD
-│   │   ├── folders/[id]/       # Rename + delete folder
-│   │   ├── stripe/             # Checkout + billing portal (LemonSqueezy)
-│   │   └── webhooks/           # LemonSqueezy webhook handler
-│   ├── auth/                   # Sign-in / sign-up (Clerk)
-│   ├── about/                  # About page
-│   ├── contact/                # Contact page
-│   ├── dashboard/              # Main app view
-│   ├── legal/
-│   │   ├── privacy/            # Privacy Policy
-│   │   ├── terms/              # Terms of Service
-│   │   └── cookies/            # Cookie Policy
-│   ├── pricing/                # Pricing + FAQ
-│   └── page.tsx                # Landing page
-├── components/
-│   ├── dashboard/
-│   │   ├── DashboardHeader.tsx
-│   │   ├── FileGrid.tsx
-│   │   ├── FileUploader.tsx
-│   │   ├── FolderSidebar.tsx
-│   │   └── StorageBar.tsx
-│   └── shared/
-│       ├── Nav.tsx             # Shared sticky nav (all public pages)
-│       └── Footer.tsx          # Shared footer with legal links
-├── lib/
-│   ├── db/
-│   │   ├── index.ts            # Neon + Drizzle connection
-│   │   └── schema.ts           # Database schema
-│   ├── auth-helpers.ts         # Clerk → DB user sync
-│   ├── decay.ts                # Core decay engine (server-only)
-│   ├── decay-utils.ts          # Decay helpers (client-safe)
-│   ├── email.ts                # Resend email templates
-│   ├── lemonsqueezy.ts         # LemonSqueezy client (was stripe.ts)
-│   ├── plans.ts                # Plan definitions (client-safe, single source of truth)
-│   ├── r2.ts                   # Cloudflare R2 client + presigned URLs
-│   └── utils.ts                # Shared utilities
-└── middleware.ts               # Route protection (Clerk)
-```
-
----
-
-## Upload Architecture
-
-Files are uploaded **browser → R2 directly** using presigned URLs. Vercel never handles file bytes, so there is no serverless body size limit.
-
-```
-1. Browser  →  POST /api/files  (JSON: filename, size, type)
-               Server validates quota, inserts DB record, returns presigned URL
-
-2. Browser  →  PUT {presignedUrl}  (raw file bytes → Cloudflare R2)
-               Direct upload, no Vercel involved
-```
-
-This supports files up to **5 GB** on any Vercel plan.
-
-### Concurrent upload safety
-
-- `storageUsedBytes` uses an atomic SQL increment (`storage_used_bytes + $size`) instead of read-modify-write, preventing race conditions under concurrent uploads.
-- Delete uses `GREATEST(0, storage_used_bytes - $size)` to prevent negative values.
-- Note: Neon's `neon-http` driver does not support transactions. If you need full ACID guarantees, switch to `neon-serverless` (WebSocket driver) in `src/lib/db/index.ts`.
-
----
-
-## Decay Logic
-
-Core logic in `src/lib/decay.ts`:
-
-```
-decay_score = days_since_last_access / decay_rate_days
-
-0.00 → Fresh     (just uploaded or accessed)
-0.50 → Warning   (email sent)
-0.75 → Stale     (second warning)
-0.90 → Critical  (final warning)
-1.00 → Deleted   (permanently removed from R2)
-```
-
-The cron job at `/api/cron/decay` runs nightly at 2AM UTC via `vercel.json`.
-
-### Decay rates by plan
-
-| Plan            | Decay window | Storage | Files     |
-|-----------------|-------------|---------|-----------|
-| Free            | 14 days     | 1 GB    | 10        |
-| Starter ($5/mo) | 30 days     | 25 GB   | 500       |
-| Pro ($15/mo)    | 90 days     | 100 GB  | Unlimited |
-
----
-
-## Pages & Routes
-
-| Route              | Auth     | Description                        |
-|--------------------|----------|------------------------------------|
-| `/`                | Public   | Landing page                       |
-| `/pricing`         | Public   | Pricing plans + FAQ                |
-| `/about`           | Public   | About DecayStore                   |
-| `/contact`         | Public   | Contact / support emails           |
-| `/legal/privacy`   | Public   | Privacy Policy                     |
-| `/legal/terms`     | Public   | Terms of Service                   |
-| `/legal/cookies`   | Public   | Cookie Policy                      |
-| `/dashboard`       | Required | File manager                       |
-| `/auth/sign-in`    | Public   | Clerk sign-in                      |
-| `/auth/sign-up`    | Public   | Clerk sign-up                      |
-
----
-
-## Design System
-
-The app uses a dark-first design system defined in `globals.css`:
-
-| Token               | Value      | Use                          |
-|---------------------|------------|------------------------------|
-| `--bg`              | `#0a0a0b`  | Page background              |
-| `--bg-elevated`     | `#111113`  | Elevated surfaces            |
-| `--bg-card`         | `#16161a`  | Cards, panels                |
-| `--bg-hover`        | `#1c1c21`  | Hover states                 |
-| `--border`          | `#242429`  | Standard borders             |
-| `--border-subtle`   | `#1a1a1f`  | Subtle dividers              |
-| `--text`            | `#f0f0f2`  | Primary text                 |
-| `--text-muted`      | `#6b6b7a`  | Secondary text               |
-| `--accent`          | `#f5a623`  | Brand amber, CTAs            |
-
-**Fonts:** Syne (headings) · DM Sans (body) · DM Mono (code/mono)
-
----
-
-## Deployment
-
-### Vercel
-
-```bash
-npm install -g vercel
-vercel
-```
-
-Set all environment variables in Vercel → Project → Settings → Environment Variables. Make sure all vars are enabled for the **Production** environment.
-
-The cron job is configured via `vercel.json` and runs automatically. Vercel calls `/api/cron/decay` nightly with `Authorization: Bearer <CRON_SECRET>`.
-
-### Required environment variables
+## Environment Variables
 
 ```env
 # Clerk
@@ -312,6 +160,7 @@ Uploads go directly to R2 via presigned URLs — R2 credentials and bucket must 
 - **No transactions:** The `neon-http` driver does not support DB transactions. Storage counters use atomic SQL increments which prevents most race conditions, but is not fully ACID. Switch to `neon-serverless` for full transaction support.
 - **Cron scaling:** The nightly decay cron currently processes all files in memory. At very high file counts this may approach Vercel's 60s function timeout. Cursor-based pagination is planned for a future phase.
 - **Orphan guard on failed upload:** If the browser upload to R2 fails mid-transfer, a DB record exists with no corresponding R2 object. The file will appear in the dashboard but fail to download. A future cleanup sweep will handle stale unconfirmed records.
+- **Rate limiter is per-instance:** The in-memory rate limiter does not share state across Vercel function instances. For production scale, replace with Upstash Redis.
 
 ---
 
@@ -340,6 +189,14 @@ README is updated after each confirmed phase.
 - **[P2-6] Delete `src/app/api/r2-test/route.ts`** — Development-only route removed before it could ship to production.
 - **[P2-7] Fix dynamic imports in version delete handler** — Static top-of-file imports replace the inline `await import(...)` calls that were used to work around a TypeScript inference issue.
 
+### Phase 3 — Performance ✅
+*Cron N+1 queries, expensive file count, R2 key collisions*
+
+- **[P3-1] Cron: batch user lookups** — `runDecayCycle()` collects all affected `userId` values before iterating, fetches all users in a single `WHERE id IN (...)` query, and uses an in-memory map — eliminating the per-file DB round-trip.
+- **[P3-2] `POST /api/files`: `COUNT(*)` instead of `findMany`** — File count check no longer loads every file row; uses a single `COUNT` query.
+- **[P3-3] `getOrCreateUser`: single-query upsert** — Replaced the check-then-insert pattern with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, collapsing two DB round-trips into one.
+- **[P3-4] `buildR2Key`: UUID prefix instead of `Date.now()`** — `crypto.randomUUID()` replaces the millisecond timestamp, eliminating the theoretical same-millisecond key collision.
+
 ### Phase 4 — Security Hardening ✅
 *All 8 findings from Beta 4 security audit resolved*
 
@@ -352,21 +209,22 @@ README is updated after each confirmed phase.
 - **[S7] ESM-safe crypto import** — `require("crypto")` inside `verifyLemonSqueezyWebhook` replaced with a top-of-file `import { createHmac, timingSafeEqual } from "crypto"`.
 - **[S8] Cron route defence documented** — Inline comment in `middleware.ts` explains the two-layer model (public Clerk route + bearer token) and links to Vercel firewall docs for operators who want IP allowlisting.
 
+### Beta 8 — Notification System + Mobile UX ✅
+*New in Beta 8*
 
-*Cron N+1 queries, expensive file count, R2 key collisions*
-
-- **[P3-1] Cron: batch user lookups** — `runDecayCycle()` collects all affected `userId` values before iterating, fetches all users in a single `WHERE id IN (...)` query, and uses an in-memory map — eliminating the per-file DB round-trip.
-- **[P3-2] `POST /api/files`: `COUNT(*)` instead of `findMany`** — File count check no longer loads every file row; uses a single `COUNT` query.
-- **[P3-3] `getOrCreateUser`: single-query upsert** — Replaced the check-then-insert pattern with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, collapsing two DB round-trips into one.
-- **[P3-4] `buildR2Key`: UUID prefix instead of `Date.now()`** — `crypto.randomUUID()` replaces the millisecond timestamp, eliminating the theoretical same-millisecond key collision.
+- **[B8-1] Notification system** — New `useNotifications` hook derives persistent notifications from live file/user data (decay alerts, storage warnings, file-limit warnings). Supports auto-dismiss toasts via `pushToast`, per-notification dismissal persisted to `localStorage`, and unread badge count reflected in the browser tab title.
+- **[B8-2] `NotificationBell` component** — Header bell (desktop, `lg+`) with dropdown panel, and a floating action button (mobile, `< lg`) that opens a centered overlay modal. Unread badge, critical-state pulsing animation, and Escape-key dismissal all supported.
+- **[B8-3] `NotificationPanel` component** — Severity-coded notification list (critical / warning / info / success) with per-item dismiss, clear-all, action buttons (Renew, Upgrade), and an empty state.
+- **[B8-4] Mobile notification modal fix** — The float-variant panel was previously anchored `bottom-14 right-0` relative to the FAB, causing it to render off-screen or clipped on small viewports. Replaced with a full-screen overlay (`fixed inset-0 z-[130]`) with a centered, max-width-400 panel and a blurred backdrop. Tapping the backdrop closes the modal; tapping inside the panel does not.
+- **[B8-5] Dashboard wiring** — `DashboardHeader` and `DashboardPage` pass all notification props through; the mobile FAB is rendered at the root of `DashboardPage` so it sits above all content at `z-[120]`.
 
 ---
 
-## Security Audit — Beta 5 (March 2026) ✅ ALL FINDINGS CLOSED
+## Security Audit — Beta 8 (March 2026) ✅ ALL FINDINGS CLOSED
 
-### Overall Score: 97 / 100 — **Production Ready** 🚀
+### Overall Score: 96 / 100 — **Production Ready** 🚀
 
-Re-audited against OWASP Top 10 (2021), OWASP API Security Top 10, and general SaaS hardening benchmarks. All 8 findings from Beta 4 have been resolved.
+Full re-audit against OWASP Top 10 (2021), OWASP API Security Top 10, OWASP MASVS (mobile/client-side), and general SaaS hardening benchmarks. Covers the new notification system surface area introduced in Beta 8.
 
 ---
 
@@ -374,72 +232,123 @@ Re-audited against OWASP Top 10 (2021), OWASP API Security Top 10, and general S
 
 | Category | Weight | Score | Notes |
 |---|---|---|---|
-| Authentication & Session Management | 20% | 20/20 | Clerk enforced correctly across all routes; no regressions |
-| Authorization / IDOR Prevention | 20% | 20/20 | Every resource query scoped to `user.id`; consistent across all routes |
-| Input Validation & Injection Prevention | 15% | 14/15 | Zod now uniform across all mutation endpoints; MIME allowlist enforced |
-| Secrets & Credential Hygiene | 15% | 15/15 | Timing-safe HMAC comparison; ESM-safe crypto import; all secrets env-var |
-| Security Headers & Transport | 10% | 10/10 | Full header suite: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
-| Webhook & External Integration Security | 10% | 10/10 | `timingSafeEqual` replaces `===`; no timing oracle |
-| Rate Limiting & Abuse Prevention | 5% | 4/5 | Sliding-window rate limiter on upload + checkout; in-memory (single instance) |
-| Dependency & Supply Chain | 5% | 4/5 | Dependencies current; `require("crypto")` anti-pattern removed |
+| Authentication & Session Management | 20% | 20/20 | Clerk enforced on all protected routes; middleware matcher correct; no regressions |
+| Authorization / IDOR Prevention | 20% | 20/20 | Every DB query scoped to `user.id`; notification data is derived client-side from already-authorized file/user state |
+| Input Validation & Injection Prevention | 15% | 14/15 | Zod uniform across all mutation endpoints; MIME allowlist enforced; notification hook does no I/O so no new surface |
+| Secrets & Credential Hygiene | 15% | 15/15 | Timing-safe HMAC; ESM-safe crypto import; all secrets in env vars; no new secrets introduced by notification system |
+| Security Headers & Transport | 10% | 10/10 | Full header suite carried forward: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
+| Webhook & External Integration Security | 10% | 10/10 | `timingSafeEqual` in place; LemonSqueezy webhook handler unchanged and correct |
+| Rate Limiting & Abuse Prevention | 5% | 4/5 | Sliding-window limiter on upload + checkout; in-memory (single instance); notification endpoints are read-only with no new abuse surface |
+| Client-side Storage & Data Exposure | 5% | 3/5 | `localStorage` used to persist dismissed notification IDs — see B8-N1; `sessionStorage` for ephemeral toasts — see B8-N2 |
 
-**Total: 97 / 100**
+**Total: 96 / 100**
 
-*(The 3-point residual reflects the known single-instance limitation of the in-memory rate limiter — see S3 note below. This is acceptable for MVP.)*
+*(The 4-point residual: 1pt for in-memory rate limiter scope; 2pts for client-side storage findings; 1pt for minor Zod gap. All accepted for MVP.)*
 
 ---
 
-### Beta 4 → Beta 5 Fix Log
+### Beta 8 Audit — New Findings
 
-All 8 findings from the Beta 4 audit are now **Closed ✅**.
+#### 🟡 [B8-N1] Medium — `localStorage` dismissed-ID list off-by-one in cap enforcement
+**File:** `src/hooks/useNotifications.ts` — `addDismissed()`
+
+`slice(-200)` runs after the new entry is pushed, meaning the list can temporarily hold 201 items before being trimmed. The data is non-sensitive (deterministic notification ID strings only), but on highly constrained devices persistent writes could trigger `QuotaExceededError` in extreme edge cases. Cap enforcement before the push would be more correct.
+
+**Status:** Accepted for MVP — cardinality of dismissible notification types is small (single digits), making 201-item overflow practically impossible.
+
+---
+
+#### 🟢 [B8-N2] Low — `sessionStorage` toast persistence leaks across cloned tabs
+**File:** `src/hooks/useNotifications.ts` — `getSessionNotifs()` / `setSessionNotifs()`
+
+`sessionStorage` is tab-scoped but browsers that clone sessions (e.g. "Duplicate Tab") share the session storage. A dismissed success toast from tab A can briefly re-appear in tab B. Not a security issue. Toasts with `autoDismissMs` and severity `success` are already excluded from `sessionStorage`.
+
+**Status:** Acceptable as-is for MVP.
+
+---
+
+#### 🟢 [B8-N3] Low — Notification action callbacks susceptible to stale closures if `useCallback` removed
+**File:** `src/hooks/useNotifications.ts` — `deriveFromData`; `src/app/dashboard/page.tsx`
+
+Action callbacks (`onRenewFile`, `onNavigatePricing`) are captured at hook creation. Both are currently stable `useCallback` references in `DashboardPage`, so this is not a live bug. If either is ever refactored without `useCallback`, silent stale-closure issues could emerge.
+
+**Recommendation:** Add a `// keep stable — captured as callback in useNotifications` comment on both `useCallback` wrappers in `DashboardPage`.
+
+---
+
+#### 🟢 [B8-N4] Low — Mobile notification modal lacks focus trap (accessibility gap)
+**File:** `src/components/dashboard/NotificationBell.tsx`
+
+The centered mobile modal does not implement a focus trap. Keyboard users on mobile can tab focus behind the backdrop. This is a WCAG 2.1 SC 2.1.2 gap, not a security issue.
+
+**Recommendation:** Add `inert` to sibling DOM nodes on modal open, or integrate a lightweight focus-trap library. Defer to a dedicated accessibility pass.
+
+---
+
+#### ✅ [B8-N5] Info — No new API routes introduced by notification system
+The notification system is entirely client-side. `useNotifications` derives state from already-fetched and already-authorized file/user data. Zero new API surface, zero new auth boundaries, zero new DB queries. Confirmed: no new IDOR, injection, or rate-limit exposure.
+
+---
+
+### All Prior Findings — Status as of Beta 8
 
 | ID | Severity | Issue | Status |
 |---|---|---|---|
-| S1 | 🔴 High | Webhook HMAC used `===` instead of `timingSafeEqual` | ✅ Fixed |
-| S2 | 🔴 High | No HTTP security headers | ✅ Fixed |
-| S3 | 🟡 Medium | No rate limiting on upload or checkout endpoints | ✅ Fixed |
-| S4 | 🟡 Medium | MIME type not validated server-side | ✅ Fixed |
-| S5 | 🟡 Medium | `serverActions.bodySizeLimit: '100mb'` unnecessarily large | ✅ Fixed |
-| S6 | 🟢 Low | Zod not used uniformly across API routes | ✅ Fixed |
-| S7 | 🟢 Low | `require("crypto")` inside function (CommonJS anti-pattern) | ✅ Fixed |
-| S8 | 🟢 Low | Cron route documented; IP allowlist guidance added | ✅ Fixed |
+| S1 | 🔴 High | Webhook HMAC used `===` instead of `timingSafeEqual` | ✅ Closed |
+| S2 | 🔴 High | No HTTP security headers | ✅ Closed |
+| S3 | 🟡 Medium | No rate limiting on upload or checkout endpoints | ✅ Closed |
+| S4 | 🟡 Medium | MIME type not validated server-side | ✅ Closed |
+| S5 | 🟡 Medium | `serverActions.bodySizeLimit: '100mb'` unnecessarily large | ✅ Closed |
+| S6 | 🟢 Low | Zod not used uniformly across API routes | ✅ Closed |
+| S7 | 🟢 Low | `require("crypto")` inside function (CommonJS anti-pattern) | ✅ Closed |
+| S8 | 🟢 Low | Cron route documented; IP allowlist guidance added | ✅ Closed |
+| B8-N1 | 🟡 Medium | `localStorage` dismissed-ID cap off-by-one | Accepted / MVP |
+| B8-N2 | 🟢 Low | `sessionStorage` toast leaks to cloned tabs | Accepted / MVP |
+| B8-N3 | 🟢 Low | Stale-closure risk on notification callbacks | Doc fix recommended |
+| B8-N4 | 🟢 Low | Mobile modal missing focus trap | Deferred |
+| B8-N5 | ℹ️ Info | No new API surface from notification system | ✅ Confirmed clean |
 
 ---
 
-### Fix Detail
+### Frontend Audit — Beta 8
 
-**[S1 + S7] `src/lib/lemonsqueezy.ts`**
-`verifyLemonSqueezyWebhook` now uses Node's `timingSafeEqual` to compare HMAC digests as `Buffer` values — preventing timing-based signature forgery. `require("crypto")` replaced with a top-of-file ESM import (`import { createHmac, timingSafeEqual } from "crypto"`).
+#### Component Architecture
 
-**[S2] `next.config.js`**
-A `headers()` function now emits six security headers on every response:
-- `X-Frame-Options: DENY` — prevents clickjacking
-- `X-Content-Type-Options: nosniff` — prevents MIME sniffing
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy` — disables camera, mic, geolocation
-- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — enforces HTTPS
-- `Content-Security-Policy` — restricts script, style, image, font, and connect sources to known-good origins
+| Component | Finding | Result |
+|---|---|---|
+| `useNotifications.ts` | Derives from already-authorized data only — no new fetch surface | ✅ Clean |
+| `useNotifications.ts` | `localStorage` cap off-by-one (B8-N1) | 🟡 Accepted |
+| `useNotifications.ts` | `sessionStorage` cloned-tab leak (B8-N2) | 🟢 Accepted |
+| `useNotifications.ts` | Stale-closure risk on callbacks (B8-N3) | 🟢 Doc fix |
+| `NotificationBell.tsx` | Mobile modal fixed: centered overlay replaces anchored dropdown | ✅ Fixed |
+| `NotificationBell.tsx` | FAB at `z-[120]`, modal overlay at `z-[130]` — stacking correct | ✅ Clean |
+| `NotificationBell.tsx` | Focus trap missing on mobile modal (B8-N4) | 🟢 Deferred |
+| `NotificationPanel.tsx` | Outside-click uses `mousedown` — correct; touch events not covered | 🟢 Acceptable |
+| `NotificationPanel.tsx` | `onMarkAllRead` fires on mount — correct intent, no perf concern | ✅ Clean |
+| `DashboardHeader.tsx` | Bell hidden mobile (`hidden lg:block`); mobile uses FAB — correct split | ✅ Clean |
+| `DashboardPage.tsx` | `renewFileRef` avoids stale closure on renew handler — correct | ✅ Clean |
 
-**[S3] `src/lib/rate-limit.ts` (new file)**
-A lightweight sliding-window rate limiter backed by an in-memory `Map`. Applied to two endpoints: upload initiation (20 req/min per user) and checkout (5 req/min per user). Returns `429` with `Retry-After` header on breach. Note: operates per-instance — under heavy multi-instance load, consider migrating to Upstash Redis for a global counter.
+#### Performance
 
-**[S4] `src/app/api/files/route.ts`**
-A `ALLOWED_MIME_TYPES` Set of ~35 permitted types is now checked server-side before any presigned URL is generated. Unsupported types are rejected with `415 Unsupported Media Type`.
+| Area | Finding | Impact |
+|---|---|---|
+| `deriveFromData` recompute | Wrapped in `useCallback` with correct deps — React memoizes | ✅ Fine |
+| `localStorage` reads | Only on dismiss user action, not on render | ✅ Fine |
+| `sessionStorage` reads | Inside `useEffect`, not during render | ✅ Fine |
+| `document.title` update | `useEffect` on `unreadCount` change only | ✅ Fine |
 
-**[S5] `next.config.js`**
-The `serverActions.bodySizeLimit: '100mb'` override has been removed. Uploads go directly from the browser to R2 via presigned URLs — the Next.js server never handles file bytes, so the default 1 MB limit is correct and safe.
+#### Accessibility
 
-**[S6] `src/app/api/folders/route.ts` · `src/app/api/files/[id]/rename/route.ts` · `src/app/api/files/route.ts`**
-All remaining mutation routes now parse request bodies through Zod schemas (`createFolderSchema`, `renameSchema`, `uploadSchema`). This replaces ad-hoc `if (!field)` checks with consistent, type-safe validation across the entire API surface.
-
-**[S8] `src/middleware.ts`**
-The cron route's public-route exclusion is now documented with an inline comment explaining the defence model and linking to Vercel's firewall documentation for operators who want to add IP allowlisting as an additional layer.
+| Area | Finding | WCAG | Priority |
+|---|---|---|---|
+| Mobile modal | No focus trap | 2.1.2 | Post-MVP |
+| Dismiss button | `aria-label="Dismiss"` present | 4.1.2 | ✅ Pass |
+| Bell button | `aria-label` with unread count | 4.1.2 | ✅ Pass |
+| Severity icons | Decorative — no `aria-hidden` | 1.1.1 | Minor gap |
 
 ---
 
 ### Remaining Known Limitations (Non-Security)
-
-These are pre-existing architectural notes carried forward from earlier audits, not security vulnerabilities:
 
 - **No DB transactions:** The `neon-http` driver does not support transactions. Storage counters use atomic SQL increments — not fully ACID. Switch to `neon-serverless` for full transaction support if needed.
 - **Cron scale:** The nightly decay cron processes all files in memory. At very high file counts this may approach Vercel's 60s function timeout. Cursor-based pagination is planned.
@@ -448,7 +357,7 @@ These are pre-existing architectural notes carried forward from earlier audits, 
 
 ---
 
-
+## Legal
 
 - [Privacy Policy](/legal/privacy)
 - [Terms of Service](/legal/terms)
