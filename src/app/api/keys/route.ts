@@ -14,24 +14,6 @@ const createKeySchema = z.object({
   label: z.string().min(1, "Label is required").max(64, "Label too long").trim(),
 })
 
-// ─── Shared: resolve a user by API key (used by middleware) ──────────────
-// Exported so middleware.ts can import it for Bearer token auth.
-export async function getUserByApiKey(rawKey: string) {
-  const hash = createHash("sha256").update(rawKey).digest("hex")
-  const row  = await db.query.apiKeys.findFirst({
-    where: eq(apiKeys.keyHash, hash),
-  })
-  if (!row) return null
-
-  // Update lastUsedAt without blocking the response
-  db.update(apiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiKeys.id, row.id))
-    .catch(() => {})
-
-  return row
-}
-
 // ─── GET /api/keys — list keys for the current user ──────
 export async function GET() {
   try {
