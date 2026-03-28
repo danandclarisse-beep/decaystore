@@ -82,7 +82,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
         filename:    file.name,
         contentType: file.type || "application/octet-stream",
         sizeBytes:   file.size,
-        folderId:    currentFolderId,
+        ...(currentFolderId != null && { folderId: currentFolderId }),
       }
 
       // [P5-1] Pro users can pass a custom decayRateDays at upload time.
