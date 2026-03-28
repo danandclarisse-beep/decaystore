@@ -78,7 +78,7 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), parentId: currentFolderId }),
+        body: JSON.stringify({ name: newName.trim(), ...(currentFolderId != null && { parentId: currentFolderId }) }),
       })
       if (!res.ok) {
         const data = await res.json()
