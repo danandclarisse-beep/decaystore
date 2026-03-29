@@ -13,7 +13,7 @@ A Next.js SaaS where uploaded files slowly decay and auto-delete if not accessed
 3. [Environment Variables](#environment-variables)
 4. [Local Development](#local-development)
 5. [Known Limitations](#known-limitations)
-6. [Security Audit — Beta 8](#security-audit--beta-8)
+6. [Full-System Audit — Beta 9](#full-system-audit--beta-9)
 7. [Change Log](#change-log)
 8. [Roadmap](#roadmap)
 9. [Legal & License](#legal--license)
@@ -181,42 +181,52 @@ Uploads go directly to R2 via presigned URLs — R2 credentials and bucket must 
 
 ---
 
-## Security Audit — Beta 8
+## Full-System Audit — Beta 9
 
-### Overall Score: 96 / 100 — Production Ready 🚀
+### Overall Score: 91 / 100 — Production Ready 🚀
 
-Full audit against OWASP Top 10 (2021), OWASP API Security Top 10, and general SaaS hardening benchmarks.
+Full-stack audit covering frontend, backend/API, UX/UI, security, performance, and code quality.
+Conducted after Phase 9 implementation. Supersedes the Beta 8 security-only audit.
 
-| Category | Weight | Score | Notes |
-|---|---|---|---|
-| Authentication & Session Management | 20% | 20/20 | Clerk enforced on all protected routes; middleware matcher correct |
-| Authorization / IDOR Prevention | 20% | 20/20 | Every DB query scoped to `user.id` |
-| Input Validation & Injection | 15% | 14/15 | Zod uniform across all mutation endpoints; MIME allowlist enforced |
-| Secrets & Credential Hygiene | 15% | 15/15 | Timing-safe HMAC; all secrets in env vars |
-| Security Headers & Transport | 10% | 10/10 | Full header suite: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
-| Webhook & External Integration | 10% | 10/10 | `timingSafeEqual` in place; webhook handler correct |
-| Rate Limiting & Abuse Prevention | 5% | 4/5 | In-memory limiter (single instance); accepted for MVP |
-| Client-side Storage & Data Exposure | 5% | 3/5 | `localStorage` for dismissed notification IDs — see B8-N1 |
+#### Scores by Category
 
-**Total: 96 / 100**
+| Category | Score | Notes |
+|---|---|---|
+| Frontend / UI | 20 / 25 | Dark mode, FOUC fix, MIME allowlist, presigned upload all correct. Two prop-threading bugs noted (A9-1, A9-4). |
+| UX & Flows | 22 / 25 | Skeleton loaders, toasts, onboarding, banners, breadcrumbs, mobile drawers all solid. P9-4 drag-and-drop not yet implemented. |
+| Backend / API | 23 / 25 | Correct status codes, atomic storage counters, full orphan cleanup, plan enforcement server-side. Snapshot cron N+1 (A9-2) and missing analytics rate-limit (A9-5) noted. |
+| Security | 96 / 100 | Unchanged from Beta 8 — see findings table below. |
+| Performance | 18 / 20 | Batch user lookup in decay cron, `COUNT(*)` file check, UUID R2 keys. Snapshot cron N+1 (A9-2) remains. |
+| Code Quality | 18 / 20 | Clean naming, single source of truth for plans, no dead code. Three minor issues (A9-1, A9-3, A9-4). |
 
-### All Findings
+**Composite Total: 91 / 100**
 
-| ID | Severity | Issue | Status |
-|---|---|---|---|
-| S1 | 🔴 High | Webhook HMAC used `===` instead of `timingSafeEqual` | ✅ Closed |
-| S2 | 🔴 High | No HTTP security headers | ✅ Closed |
-| S3 | 🟡 Medium | No rate limiting on upload or checkout endpoints | ✅ Closed |
-| S4 | 🟡 Medium | MIME type not validated server-side | ✅ Closed |
-| S5 | 🟡 Medium | `serverActions.bodySizeLimit: '100mb'` unnecessarily large | ✅ Closed |
-| S6 | 🟢 Low | Zod not used uniformly across API routes | ✅ Closed |
-| S7 | 🟢 Low | `require("crypto")` inside function body | ✅ Closed |
-| S8 | 🟢 Low | Cron route defence undocumented | ✅ Closed |
-| B8-N1 | 🟡 Medium | `localStorage` dismissed-ID cap off-by-one | Accepted / MVP |
-| B8-N2 | 🟢 Low | `sessionStorage` toast leaks to cloned tabs | Accepted / MVP |
-| B8-N3 | 🟢 Low | Stale-closure risk on notification callbacks | Doc fix recommended |
-| B8-N4 | 🟢 Low | Mobile modal missing focus trap (WCAG 2.1.2) | Deferred |
-| B8-N5 | ℹ️ Info | No new API surface from notification system | ✅ Confirmed clean |
+---
+
+#### All Findings
+
+| ID | Severity | Category | Issue | Status |
+|---|---|---|---|---|
+| S1 | 🔴 High | Security | Webhook HMAC used `===` instead of `timingSafeEqual` | ✅ Closed |
+| S2 | 🔴 High | Security | No HTTP security headers | ✅ Closed |
+| S3 | 🟡 Medium | Security | No rate limiting on upload or checkout endpoints | ✅ Closed |
+| S4 | 🟡 Medium | Security | MIME type not validated server-side | ✅ Closed |
+| S5 | 🟡 Medium | Security | `serverActions.bodySizeLimit: '100mb'` unnecessarily large | ✅ Closed |
+| S6 | 🟢 Low | Security | Zod not used uniformly across API routes | ✅ Closed |
+| S7 | 🟢 Low | Security | `require("crypto")` inside function body | ✅ Closed |
+| S8 | 🟢 Low | Security | Cron route defence undocumented | ✅ Closed |
+| B8-N1 | 🟡 Medium | Security | `localStorage` dismissed-ID cap off-by-one | Accepted / MVP |
+| B8-N2 | 🟢 Low | Security | `sessionStorage` toast leaks to cloned tabs | Accepted / MVP |
+| B8-N3 | 🟢 Low | Security | Stale-closure risk on notification callbacks | Doc fix recommended |
+| B8-N4 | 🟢 Low | UX | Mobile modal missing focus trap (WCAG 2.1.2) | Deferred → P10 |
+| B8-N5 | ℹ️ Info | Security | No new API surface from notification system | ✅ Confirmed clean |
+| A9-1 | 🟡 Medium | Frontend | `AnalyticsPanel` hardcodes `storageLimit` to `"pro"` regardless of actual user plan | 🔴 Open → P10 |
+| A9-2 | 🟡 Medium | Performance | Snapshot cron issues one `files.findMany()` per user (N+1); same pattern P3 fixed in decay cron | 🔴 Open → P10 |
+| A9-3 | 🟢 Low | Code Quality | `dotenv` re-added to `devDependencies` after P2-5 removal; README was inconsistent | 🔴 Open → P10 |
+| A9-4 | 🟡 Medium | Frontend | `userPlan` prop never forwarded to `<FileGrid>` from dashboard — Pro share actions silently hidden for all users | 🔴 Open → P10 |
+| A9-5 | 🟢 Low | Backend | `GET /api/analytics` missing rate-limit (all other endpoints protected) | Accepted / MVP |
+| A9-6 | 🟢 Low | Backend | `/share/[fileId]` does not check `uploadConfirmed = true` — ghost record edge case | Accepted / MVP |
+| A9-7 | 🟢 Low | UX | P9-4 drag-and-drop not implemented; deferred to Phase 10 | Deferred → P10 |
 
 ---
 
@@ -417,16 +427,164 @@ CREATE TABLE storage_snapshots (
 
 ---
 
+### Phase 9 — Polish & Retention ✅
+
+**Completing the user-facing polish layer. P9-4 deferred to Phase 10.**
+
+- **[P9-1] Dark/light mode toggle** — Sun/moon icon button in `DashboardHeader` and mobile overflow menu. Persists to `localStorage` under key `ds-theme`. Applies `data-theme` attribute to `<html>`. Inline `<script>` in `layout.tsx` reads saved preference before first paint, eliminating flash of unstyled content (FOUC). Falls back to `prefers-color-scheme` media query.
+- **[P9-2] File tagging / labels** — Tags stored as `text[]` column on `files` table (pre-added in Phase 7). Tag input and chip display in the Details modal inside `FileGrid`. Tags sanitised to `[a-z0-9_-]` before save. File grid shows a tag filter row whenever any file has tags. Filter is client-side (no API call). Optimistic updates on add/remove. `PATCH /api/files/[id]` already accepted a `tags` field.
+- **[P9-3] Usage analytics (Pro)** — New `GET /api/analytics` endpoint (Pro-gated): returns 30-day storage snapshots, current file count, decay distribution across five buckets, and top-5 most recently renewed files. New `GET /api/cron/snapshot` cron runs daily at 03:00 UTC — writes one `storage_snapshots` row per user. New `AnalyticsPanel` component: custom SVG area chart for the 30-day trend, stacked decay-status bar, top-renewed file list. Desktop: inline `360px` right panel. Mobile: right drawer. Toggle button in the breadcrumb bar (Pro only). *(Note: two bugs found in audit — see A9-1 and A9-2, fixed in P10.)*
+- **[P9-4] Drag-and-drop folder organisation** — Deferred to Phase 10 (A9-7). `@dnd-kit/core` not installed.
+
+**Migration required:**
+
+```sql
+CREATE TABLE storage_snapshots (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  storage_used_bytes BIGINT NOT NULL,
+  file_count         INTEGER NOT NULL DEFAULT 0,
+  snapshot_date      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+**Files changed:**
+
+| File | Status |
+|---|---|
+| `src/app/api/analytics/route.ts` | New |
+| `src/app/api/cron/snapshot/route.ts` | New |
+| `src/components/dashboard/AnalyticsPanel.tsx` | New |
+| `src/components/dashboard/DashboardHeader.tsx` | Modified — theme toggle |
+| `src/components/dashboard/FileGrid.tsx` | Modified — tagging, tag filter pills |
+| `src/app/dashboard/page.tsx` | Modified — analytics panel wiring |
+| `src/app/layout.tsx` | Modified — FOUC-prevention script |
+| `src/app/globals.css` | Modified — light theme CSS variables |
+| `src/lib/db/schema.ts` | Modified — `storageSnapshots` table |
+| `vercel.json` | Modified — snapshot cron schedule |
+
+---
+
+### Phase 10 — Audit Fixes ✅
+
+**Addressed all open findings from the Beta 9 full-system audit (A9-1 through A9-4). P10-5 drag-and-drop deferred to next sprint.**
+
+- **[P10-1] `userPlan` prop forwarded to `<FileGrid>`** — `dashboard/page.tsx` was not passing `userPlan` to `<FileGrid>`, causing the prop to silently resolve to `undefined`. Pro-only actions (share toggle, copy-link button) were hidden for all users. Fixed by adding `userPlan={user?.plan ?? "free"}` to the `<FileGrid>` call.
+- **[P10-2] `AnalyticsPanel` storage limit now plan-aware** — `AnalyticsPanel` hardcoded `PLAN_STORAGE_LIMITS["pro"]` as the quota ceiling regardless of the signed-in user's actual plan. Added a `plan` prop to the component and passed `user?.plan ?? "free"` from both call sites in `dashboard/page.tsx`. Storage bar, remaining-bytes label, and trend chart max now reflect the correct plan quota.
+- **[P10-3] Snapshot cron N+1 query eliminated** — The daily snapshot cron was issuing one `files.findMany()` per user inside the main loop (N+1 DB round-trips). Replaced with a single `SELECT user_id, COUNT(*) ... GROUP BY user_id` aggregate query. A `Map<userId, count>` is built once; the insert loop does zero additional DB calls for file counts.
+- **[P10-4] `dotenv` removed from `devDependencies`** — `dotenv` was re-added to `devDependencies` after Phase 2 removed it. Next.js handles `.env` loading natively; the package was unused. Removed from `package.json`.
+
+**No migration required.**
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/app/dashboard/page.tsx` | Add `userPlan` to `<FileGrid>`; add `plan` to both `<AnalyticsPanel>` instances |
+| `src/components/dashboard/AnalyticsPanel.tsx` | Add `plan` prop to `Props`; replace hardcoded `"pro"` key |
+| `src/app/api/cron/snapshot/route.ts` | Replace per-user `findMany()` with single GROUP BY aggregate + Map lookup |
+| `package.json` | Remove `dotenv` from `devDependencies` |
+
+---
+
 ## Roadmap
 
-### Phase 9 — Polish & Retention
+### Phase 9 — Polish & Retention ✅
 
-| Feature | Plans | Notes |
-|---|---|---|
-| **[P9-1] Dark/light mode toggle** | All | Sun/moon toggle in header. Persists to `localStorage`. Toggles `data-theme` on `<html>`. |
-| **[P9-2] File tagging / labels** | All | Tag chips in Details modal. Filter pills in file grid. |
-| **[P9-3] Usage analytics** | Pro | Daily storage snapshots. Analytics panel: storage trend chart, files by decay status, top renewed files. |
-| **[P9-4] Drag-and-drop folder organisation** | All | `@dnd-kit/core` integration. Drag file card over folder card to trigger move. |
+| Feature | Plans | Status | Notes |
+|---|---|---|---|
+| **[P9-1] Dark/light mode toggle** | All | ✅ Done | Sun/moon toggle in header. FOUC prevented by inline script. Persists to `localStorage`. |
+| **[P9-2] File tagging / labels** | All | ✅ Done | Tag chips in Details modal. Filter pills in file grid. Sanitised to `[a-z0-9_-]`. Optimistic updates. |
+| **[P9-3] Usage analytics** | Pro | ⚠️ Partial | Daily snapshot cron live. Analytics panel functional. Two bugs carried to P10 (A9-1, A9-2). |
+| **[P9-4] Drag-and-drop folder organisation** | All | ⏳ Deferred | Moved to Phase 10. `@dnd-kit/core` not yet installed. |
+
+---
+
+### Phase 10 — Audit Fixes & Drag-and-Drop
+
+Addresses all open findings from the Beta 9 full-system audit plus the deferred P9-4 feature.
+No new migration required.
+
+#### [P10-1] Fix `userPlan` not forwarded to `<FileGrid>` *(A9-4 — Medium)*
+
+**Problem:** `dashboard/page.tsx` passes `plan` to every child component but omits the `userPlan` prop on `<FileGrid>`. Because the prop is typed `optional`, it silently resolves to `undefined`. The result: Pro-only actions — the share toggle and copy-link button in the file card overflow menu — are invisible for all users, including Pro users.
+
+**Fix:** Add `userPlan={user?.plan ?? "free"}` to the `<FileGrid>` call in `dashboard/page.tsx`. One line.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/app/dashboard/page.tsx` | Add `userPlan` prop to `<FileGrid>` |
+
+---
+
+#### [P10-2] Fix `AnalyticsPanel` hardcoded storage limit *(A9-1 — Medium)*
+
+**Problem:** `AnalyticsPanel.tsx` line 56 hard-codes `PLAN_STORAGE_LIMITS["pro"]` as the quota ceiling, regardless of the authenticated user's actual plan. A user on Starter who views the analytics panel sees Pro quota numbers (100 GB) instead of their actual limit (25 GB). Storage bar, remaining-bytes copy, and trend chart max all read incorrectly.
+
+**Fix:** Add a `plan` prop (`"free" | "starter" | "pro"`) to `AnalyticsPanel`. Pass `user?.plan ?? "free"` from `dashboard/page.tsx`. Replace the hardcoded key with the prop.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/components/dashboard/AnalyticsPanel.tsx` | Add `plan` prop; replace hardcoded `"pro"` key |
+| `src/app/dashboard/page.tsx` | Pass `plan={user?.plan ?? "free"}` to both `<AnalyticsPanel>` instances |
+
+---
+
+#### [P10-3] Fix snapshot cron N+1 file queries *(A9-2 — Medium)*
+
+**Problem:** `GET /api/cron/snapshot` iterates over every user and issues a separate `files.findMany()` for each one to count confirmed, non-deleted files. With N users this is N+1 database round-trips — the same anti-pattern that Phase 3 fixed in the decay cron.
+
+**Fix:** Replace the per-user file query with a single aggregated query grouped by `user_id`:
+
+```sql
+SELECT user_id, COUNT(*) AS file_count
+FROM files
+WHERE status != 'deleted' AND upload_confirmed = true
+GROUP BY user_id
+```
+
+Build a `Map<userId, count>` from the result, then look up each user's count in the loop with no further DB calls. The snapshot insert loop remains, but the file queries collapse to one.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/app/api/cron/snapshot/route.ts` | Replace per-user `files.findMany()` with single grouped aggregate query |
+
+---
+
+#### [P10-4] Remove stale `dotenv` from `devDependencies` *(A9-3 — Low)*
+
+**Problem:** Phase 2 (P2-5) removed `dotenv` as a runtime dependency because Next.js handles `.env` loading natively. It has since been re-added to `devDependencies` (v17.3.1). The package is unused — Next.js never calls it — and its presence contradicts the P2-5 change log entry.
+
+**Fix:** Remove `"dotenv"` from `devDependencies` in `package.json`.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `package.json` | Remove `dotenv` from `devDependencies` |
+
+---
+
+#### [P10-5] Drag-and-drop folder organisation *(A9-7 / P9-4 deferred)*
+
+**Plans:** All
+
+Install `@dnd-kit/core` and `@dnd-kit/utilities`. Add drag sensors to file cards in `FileGrid`. Add droppable zones to folder cards. On a successful drop, call the existing `PATCH /api/files/[id]/move` endpoint. Show a visual "drop here" highlight on folder cards during a drag. No new API routes required — the move endpoint already exists from Phase 7.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `package.json` | Add `@dnd-kit/core`, `@dnd-kit/utilities` |
+| `src/components/dashboard/FileGrid.tsx` | Add `DndContext`, `useDraggable` on file cards, `useDroppable` on folder cards |
+
+---
 
 ### Full Roadmap Summary
 
@@ -440,7 +598,8 @@ CREATE TABLE storage_snapshots (
 | P6 | Upgrade & onboarding experience | ✅ Done |
 | P7 | Power user features | ✅ Done |
 | P8 | Transparency & trust | ✅ Done |
-| P9 | Polish & retention | 🟡 In progress |
+| P9 | Polish & retention | ✅ Done (P9-4 deferred) |
+| P10 | Audit fixes & drag-and-drop (P10-1 – P10-4) | ✅ Done (P10-5 drag-and-drop next) |
 
 ---
 

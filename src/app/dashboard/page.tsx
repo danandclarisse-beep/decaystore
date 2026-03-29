@@ -325,6 +325,7 @@ function DashboardPage() {
               folders={visibleFolders}
               allFolders={folders}
               currentFolderId={currentFolderId}
+              userPlan={user?.plan ?? "free"}
               onRefresh={fetchAll}
               onOpenFolder={openFolder}
               onRenewedToast={(filename) =>
@@ -355,6 +356,7 @@ function DashboardPage() {
         {analyticsOpen && (
           <div className="hidden lg:block w-[360px] shrink-0">
             <AnalyticsPanel
+              plan={user?.plan ?? "free"}
               isOpen={analyticsOpen}
               onClose={() => setAnalyticsOpen(false)}
             />
@@ -375,6 +377,7 @@ function DashboardPage() {
       {/* [P9-3] Analytics panel mobile drawer — Pro only */}
       <div className="lg:hidden">
         <AnalyticsPanel
+          plan={user?.plan ?? "free"}
           isOpen={analyticsOpen}
           onClose={() => setAnalyticsOpen(false)}
         />

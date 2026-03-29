@@ -32,6 +32,7 @@ interface AnalyticsData {
 }
 
 interface Props {
+  plan: "free" | "starter" | "pro"
   isOpen: boolean
   onClose: () => void
 }
@@ -48,12 +49,13 @@ const DECAY_LABELS: Record<string, string> = {
   fresh: "Fresh", aging: "Aging", stale: "Stale", critical: "Critical", expiring: "Expiring",
 }
 
-export function AnalyticsPanel({ isOpen, onClose }: Props) {
+export function AnalyticsPanel({ plan, isOpen, onClose }: Props) {
   const [data, setData]       = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
-  const storageLimit = PLAN_STORAGE_LIMITS["pro"]
+  // [P10-2] Use the actual user's plan limit, not hardcoded "pro"
+  const storageLimit = PLAN_STORAGE_LIMITS[plan]
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null)
