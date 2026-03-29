@@ -226,7 +226,7 @@ Conducted after Phase 9 implementation. Supersedes the Beta 8 security-only audi
 | A9-4 | 🟡 Medium | Frontend | `userPlan` prop never forwarded to `<FileGrid>` from dashboard — Pro share actions silently hidden for all users | 🔴 Open → P10 |
 | A9-5 | 🟢 Low | Backend | `GET /api/analytics` missing rate-limit (all other endpoints protected) | Accepted / MVP |
 | A9-6 | 🟢 Low | Backend | `/share/[fileId]` does not check `uploadConfirmed = true` — ghost record edge case | Accepted / MVP |
-| A9-7 | 🟢 Low | UX | P9-4 drag-and-drop not implemented; deferred to Phase 10 | Deferred → P10 |
+| A9-7 | 🟢 Low | UX | P9-4 drag-and-drop not implemented; deferred to Phase 10 | ✅ Closed in P10 |
 
 ---
 
@@ -473,6 +473,7 @@ CREATE TABLE storage_snapshots (
 - **[P10-2] `AnalyticsPanel` storage limit now plan-aware** — `AnalyticsPanel` hardcoded `PLAN_STORAGE_LIMITS["pro"]` as the quota ceiling regardless of the signed-in user's actual plan. Added a `plan` prop to the component and passed `user?.plan ?? "free"` from both call sites in `dashboard/page.tsx`. Storage bar, remaining-bytes label, and trend chart max now reflect the correct plan quota.
 - **[P10-3] Snapshot cron N+1 query eliminated** — The daily snapshot cron was issuing one `files.findMany()` per user inside the main loop (N+1 DB round-trips). Replaced with a single `SELECT user_id, COUNT(*) ... GROUP BY user_id` aggregate query. A `Map<userId, count>` is built once; the insert loop does zero additional DB calls for file counts.
 - **[P10-4] `dotenv` removed from `devDependencies`** — `dotenv` was re-added to `devDependencies` after Phase 2 removed it. Next.js handles `.env` loading natively; the package was unused. Removed from `package.json`.
+- **[P10-5] Drag-and-drop folder organisation** — Implemented using the native HTML5 Drag and Drop API. File cards are `draggable`; folder cards handle `onDragOver`, `onDragLeave`, and `onDrop`. A highlighted drop-target indicator (accent border + scale) appears on the hovered folder. A drag-hint pill appears at the bottom of the screen while dragging. On drop, calls the existing `POST /api/files/[id]/move`. No `@dnd-kit` or other library needed.
 
 **No migration required.**
 
@@ -484,6 +485,7 @@ CREATE TABLE storage_snapshots (
 | `src/components/dashboard/AnalyticsPanel.tsx` | Add `plan` prop to `Props`; replace hardcoded `"pro"` key |
 | `src/app/api/cron/snapshot/route.ts` | Replace per-user `findMany()` with single GROUP BY aggregate + Map lookup |
 | `package.json` | Remove `dotenv` from `devDependencies` |
+| `src/components/dashboard/FileGrid.tsx` | Native HTML5 DnD: drag state, handlers, file card `draggable`, folder card drop zones, drag hint toast |
 
 ---
 
@@ -575,14 +577,21 @@ Build a `Map<userId, count>` from the result, then look up each user's count in 
 
 **Plans:** All
 
-Install `@dnd-kit/core` and `@dnd-kit/utilities`. Add drag sensors to file cards in `FileGrid`. Add droppable zones to folder cards. On a successful drop, call the existing `PATCH /api/files/[id]/move` endpoint. Show a visual "drop here" highlight on folder cards during a drag. No new API routes required — the move endpoint already exists from Phase 7.
+Implemented using the native HTML5 Drag and Drop API — no third-party library required. `@dnd-kit` was not installed; native DnD is sufficient and costs zero bundle bytes.
+
+**What was built:**
+
+- `draggable` attribute + `onDragStart` / `onDragEnd` on every file card. Card fades to 40% opacity while being dragged so the user sees which file is in flight.
+- `onDragOver` / `onDragLeave` / `onDrop` on every folder card. Hovered folder highlights with the accent colour and scales up 2% to signal it is a valid drop target.
+- A fixed drag-hint pill appears at the bottom of the screen ("Drop onto a folder to move") while a drag is in progress, then disappears on drop or cancel.
+- On a successful drop, calls the existing `handleMove` → `POST /api/files/[id]/move` endpoint. No new API routes needed.
+- State: `dragFileId` (which file is being dragged) and `dropTargetId` (which folder is currently hovered). Both reset to `null` on drop or drag-end.
 
 **Files changed:**
 
 | File | Change |
 |---|---|
-| `package.json` | Add `@dnd-kit/core`, `@dnd-kit/utilities` |
-| `src/components/dashboard/FileGrid.tsx` | Add `DndContext`, `useDraggable` on file cards, `useDroppable` on folder cards |
+| `src/components/dashboard/FileGrid.tsx` | Native HTML5 DnD: drag state, handlers, file card `draggable`, folder card drop zones, drag hint toast |
 
 ---
 
@@ -599,7 +608,7 @@ Install `@dnd-kit/core` and `@dnd-kit/utilities`. Add drag sensors to file cards
 | P7 | Power user features | ✅ Done |
 | P8 | Transparency & trust | ✅ Done |
 | P9 | Polish & retention | ✅ Done (P9-4 deferred) |
-| P10 | Audit fixes & drag-and-drop (P10-1 – P10-4) | ✅ Done (P10-5 drag-and-drop next) |
+| P10 | Audit fixes & drag-and-drop | ✅ Done |
 
 ---
 
