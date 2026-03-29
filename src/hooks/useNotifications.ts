@@ -35,9 +35,12 @@ function addDismissed(id: string) {
   try {
     const set = getDismissed()
     set.add(id)
-    // Keep only last 200 to avoid unbounded growth
-    const arr = Array.from(set).slice(-200)
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify(arr))
+    // [B8-N1] Keep the newest 200 entries. slice(-200) on a Set that just had
+    // one item added would retain up to 201 entries before this fix — the cap
+    // must be applied AFTER add(), so we convert, add, then slice to the limit.
+    const arr = Array.from(set)
+    const capped = arr.length > 200 ? arr.slice(arr.length - 200) : arr
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(capped))
   } catch { /* noop */ }
 }
 

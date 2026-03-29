@@ -51,19 +51,21 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev",
-              "worker-src blob:",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+              // Clerk spawns blob: Web Workers; Cloudflare Turnstile uses blob: workers too
+              "worker-src blob: https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               // blob: needed for canvas/image preview via createObjectURL
               "img-src 'self' data: blob: https://*.r2.dev https://*.r2.cloudflarestorage.com https://img.clerk.com",
               // R2 presigned URLs for <video> and <audio> preview
               "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
-              // R2 presigned URLs for <iframe>-based PDF and text preview
-              "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev https://*.r2.cloudflarestorage.com",
+              // Clerk hosted UI iframes + Cloudflare Turnstile iframe + R2 preview
+              "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.r2.cloudflarestorage.com",
               // R2 presigned URLs for <object>/<embed>-based PDF preview (Chrome fallback)
               "object-src https://*.r2.cloudflarestorage.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https://*.clerk.accounts.dev https://*.r2.cloudflarestorage.com",
+              // Clerk API + Cloudflare Turnstile verification endpoint + R2
+              "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.r2.cloudflarestorage.com",
               "base-uri 'self'",
               "form-action 'self'",
               "upgrade-insecure-requests",

@@ -26,9 +26,8 @@ export function AccountSettingsClient({ user }: Props) {
 
   // ── Notification prefs state ────────────────────────────
   const [digestEnabled,   setDigestEnabled]   = useState(user.emailDigestEnabled)
-  const [warningsEnabled, setWarningsEnabled] = useState(
-    (user as Record<string, unknown>).decayWarningsEnabled as boolean ?? true
-  )
+  // [P13-1] decayWarningsEnabled is now properly typed on the User type via schema.ts
+  const [warningsEnabled, setWarningsEnabled] = useState(user.decayWarningsEnabled ?? true)
   const [prefSaving, setPrefSaving]     = useState(false)
   const [prefSaved,  setPrefSaved]      = useState(false)
   const [prefError,  setPrefError]      = useState<string | null>(null)
@@ -167,7 +166,7 @@ export function AccountSettingsClient({ user }: Props) {
     )
   }
 
-  const email = (user as unknown as { email?: string }).email ?? ""
+  const email = user.email ?? ""
 
   return (
     <div>

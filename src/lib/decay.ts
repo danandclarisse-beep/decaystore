@@ -147,15 +147,15 @@ export async function runDecayCycle(): Promise<{
           stats.deleted++
         }
 
-        // Send warning email
-        if (newStatus === "warned" && oldStatus === "active") {
+        // Send warning email — [P13-4] respect the user's decayWarningsEnabled preference
+        if (newStatus === "warned" && oldStatus === "active" && fileUser?.decayWarningsEnabled !== false) {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
           await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "warning")
           stats.warned++
         }
 
-        // Send critical warning email
-        if (newStatus === "critical" && oldStatus !== "critical") {
+        // Send critical warning email — [P13-4] respect decayWarningsEnabled
+        if (newStatus === "critical" && oldStatus !== "critical" && fileUser?.decayWarningsEnabled !== false) {
           const daysLeft = getDaysUntilDeletion(file.lastAccessedAt, file.decayRateDays)
           await sendDecayWarningEmail(fileUser?.email ?? "", file.originalFilename, daysLeft, "critical")
           stats.critical++

@@ -7,6 +7,7 @@ import { storageSnapshots, files } from "@/lib/db/schema"
 import { eq, and, ne, desc, gte } from "drizzle-orm"
 import { getOrCreateUser } from "@/lib/auth-helpers"
 import { calculateDecayScore } from "@/lib/decay-utils"
+import { rateLimit } from "@/lib/rate-limit"
 
 // ─── GET /api/analytics — Pro usage analytics ─────────────
 // Returns 30-day storage snapshots, file count trend,
@@ -16,6 +17,16 @@ export async function GET() {
   try {
     const { userId: clerkId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+    // [A9-5] Rate-limit analytics — closes the last unprotected read endpoint.
+    // 30 req/min is generous for a dashboard panel that polls infrequently.
+    const rl = rateLimit(clerkId, "analytics", 30, 60_000)
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      )
+    }
 
     const user = await getOrCreateUser()
     if (user.plan !== "pro") {

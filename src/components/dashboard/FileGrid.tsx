@@ -1455,6 +1455,8 @@ function Modal({
   wide?: boolean
   fullscreen?: boolean
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
   // Lock body scroll when modal is open
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -1462,14 +1464,55 @@ function Modal({
     return () => { document.body.style.overflow = prev }
   }, [])
 
+  // [B8-N4] Focus trap — WCAG 2.1.2 compliance.
+  // On open, move focus into the modal panel. On Tab/Shift+Tab, cycle
+  // focus through focusable elements within the panel only.
+  useEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+
+    const focusable = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+    // Move focus to the panel itself on open
+    panel.focus()
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") { onClose(); return }
+      if (e.key !== "Tab") return
+      if (!panel) return
+
+      const els = Array.from(panel.querySelectorAll<HTMLElement>(focusable)).filter(
+        (el) => !el.hasAttribute("disabled") && el.offsetParent !== null
+      )
+      if (els.length === 0) { e.preventDefault(); return }
+
+      const first = els[0]
+      const last  = els[els.length - 1]
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last)  { e.preventDefault(); first.focus() }
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
+
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      aria-modal="true"
+      role="dialog"
+      aria-label={title}
     >
       <div
-        className={`rounded-2xl w-full flex flex-col ${
+        ref={panelRef}
+        tabIndex={-1}
+        className={`rounded-2xl w-full flex flex-col outline-none ${
           fullscreen ? "sm:max-w-6xl p-4 sm:p-6" : wide ? "sm:max-w-2xl p-4 sm:p-6" : "max-w-sm p-4 sm:p-6"
         }`}
         style={{
@@ -1481,7 +1524,7 @@ function Modal({
       >
         <div className="flex items-center justify-between mb-4 shrink-0">
           <h3 className="text-base font-semibold truncate pr-4">{title}</h3>
-          <button onClick={onClose} className="action-btn p-1.5 rounded-lg shrink-0">
+          <button onClick={onClose} className="action-btn p-1.5 rounded-lg shrink-0" aria-label="Close modal">
             <XIcon className="w-4 h-4" />
           </button>
         </div>
