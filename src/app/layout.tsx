@@ -36,6 +36,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          {/* [P9-1] Apply saved theme before first paint to prevent flash */}
+          <script dangerouslySetInnerHTML={{ __html: `
+            (function() {
+              try {
+                var t = localStorage.getItem('ds-theme');
+                if (t === 'light' || t === 'dark') {
+                  document.documentElement.setAttribute('data-theme', t);
+                } else {
+                  var prefer = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                  document.documentElement.setAttribute('data-theme', prefer);
+                }
+              } catch(e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+              }
+            })();
+          ` }} />
         </head>
         <body>{children}</body>
       </html>

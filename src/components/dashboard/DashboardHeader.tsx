@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Loader2Icon,
   AlertCircleIcon,
@@ -11,6 +11,8 @@ import {
   CreditCardIcon,
   ZapIcon,
   LifeBuoyIcon,
+  SunIcon,
+  MoonIcon,
 } from "lucide-react"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import type { User } from "@/lib/db/schema"
@@ -36,6 +38,20 @@ export function DashboardHeader({
   const [portalLoading, setPortalLoading] = useState(false)
   const [portalError, setPortalError] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // [P9-1] Theme toggle — reads from localStorage, syncs to data-theme on <html>
+  const [theme, setTheme] = useState<"dark" | "light">("dark")
+  useEffect(() => {
+    const saved = localStorage.getItem("ds-theme")
+    const current = document.documentElement.getAttribute("data-theme")
+    setTheme((saved || current || "dark") as "dark" | "light")
+  }, [])
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark"
+    setTheme(next)
+    document.documentElement.setAttribute("data-theme", next)
+    localStorage.setItem("ds-theme", next)
+  }
 
   async function openBillingPortal() {
     setPortalLoading(true)
@@ -80,7 +96,7 @@ export function DashboardHeader({
     <>
       <header
         style={{
-          background: "rgba(10,10,11,0.9)",
+          background: "var(--header-bg)",
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid var(--border-subtle)",
         }}
@@ -145,6 +161,19 @@ export function DashboardHeader({
               onMarkAllRead={onMarkAllRead}
               variant="header"
             />
+
+            {/* [P9-1] Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--bg-hover)] pointer-events-auto"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+            >
+              {theme === "dark"
+                ? <SunIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                : <MoonIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+              }
+            </button>
 
             {/* Support button — Starter + Pro */}
             {(user?.plan === "starter" || user?.plan === "pro") && (
@@ -227,6 +256,19 @@ export function DashboardHeader({
                         Signed in as <span style={{ color: "var(--text)" }}>{firstName}</span>
                       </div>
                     )}
+
+                    {/* [P9-1] Theme toggle in mobile menu */}
+                    <button
+                      onClick={() => { toggleTheme(); setMobileMenuOpen(false) }}
+                      className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {theme === "dark"
+                        ? <SunIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                        : <MoonIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                      }
+                      {theme === "dark" ? "Light mode" : "Dark mode"}
+                    </button>
 
                     {(user?.plan === "starter" || user?.plan === "pro") && (
                       <a

@@ -5,7 +5,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 @layer base {
-  :root {
+  /* ── Dark theme (default) ───────────────────────────────── */
+  :root,
+  [data-theme="dark"] {
     --bg:             #0a0a0b;
     --bg-elevated:    #111113;
     --bg-card:        #16161a;
@@ -27,6 +29,35 @@
     --radius:    10px;
     --radius-lg: 16px;
     --radius-xl: 22px;
+    --header-bg: rgba(10,10,11,0.9);
+    --shadow-card: 0 2px 12px rgba(0,0,0,0.4);
+  }
+
+  /* ── Light theme ────────────────────────────────────────── */
+  [data-theme="light"] {
+    --bg:             #f5f5f0;
+    --bg-elevated:    #ffffff;
+    --bg-card:        #ffffff;
+    --bg-hover:       #f0efe9;
+    --border:         #e2e1da;
+    --border-subtle:  #eeede7;
+    --text:           #1a1a1a;
+    --text-muted:     #6b6b6b;
+    --text-dim:       #b0afaa;
+    --accent:         #d4880e;
+    --accent-dim:     rgba(212,136,14,0.10);
+    --accent-glow:    rgba(212,136,14,0.20);
+    --decay-fresh:    #059669;
+    --decay-aging:    #65a30d;
+    --decay-stale:    #d97706;
+    --decay-critical: #ea580c;
+    --decay-expire:   #dc2626;
+    --radius-sm: 6px;
+    --radius:    10px;
+    --radius-lg: 16px;
+    --radius-xl: 22px;
+    --header-bg: rgba(245,245,240,0.92);
+    --shadow-card: 0 2px 12px rgba(0,0,0,0.08);
   }
 
   * { box-sizing: border-box; }

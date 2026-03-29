@@ -7,7 +7,7 @@ import {
   UploadIcon, XIcon, ChevronDownIcon, EyeIcon, MoreHorizontalIcon,
   AlertTriangleIcon, CheckIcon, UploadCloudIcon, InfoIcon,
   SearchIcon, SlidersHorizontalIcon, Share2Icon, LinkIcon, GlobeIcon, LockIcon,
-  CheckSquareIcon, SquareIcon, SquareSlashIcon,
+  CheckSquareIcon, SquareIcon, SquareSlashIcon, TagIcon, PlusIcon,
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, formatDateTime, getMimeTypeIcon } from "@/lib/utils"
 import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion, calculateDecayScore } from "@/lib/decay-utils"
@@ -99,6 +99,15 @@ export function FileGrid({
   // ── [P7-3] Public share state ──────────────────────────────
   const [togglingPublic, setTogglingPublic]   = useState(false)
   const [copiedLink, setCopiedLink]           = useState(false)
+
+  // ── [P9-4] Drag-and-drop state ────────────────────────────
+  const [dragFileId, setDragFileId]           = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId]       = useState<string | null>(null)
+
+  // ── [P9-2] Tag state ───────────────────────────────────────
+  const [tagInput, setTagInput]               = useState("")
+  const [savingTag, setSavingTag]             = useState(false)
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
 
   function startLoading(key: ActionKey) { setLoadingKeys((p) => new Set(p).add(key)) }
   function stopLoading(key: ActionKey)  { setLoadingKeys((p) => { const s = new Set(p); s.delete(key); return s }) }
@@ -254,6 +263,13 @@ export function FileGrid({
   }
 
   // ── [P7-1] Search → filter → sort pipeline ────────────────
+  // [P9-2] Collect all unique tags across all files for the tag filter row
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    localFiles.forEach((f) => f.tags?.forEach((t) => set.add(t)))
+    return Array.from(set).sort()
+  }, [localFiles])
+
   const displayFiles = useMemo(() => {
     let result = localFiles
     if (searchQuery.trim()) {
@@ -263,6 +279,10 @@ export function FileGrid({
     if (filterCat !== "all") {
       result = result.filter((f) => getCategory(f.mimeType) === filterCat)
     }
+    // [P9-2] Tag filter
+    if (activeTagFilter) {
+      result = result.filter((f) => f.tags?.includes(activeTagFilter))
+    }
     return [...result].sort((a, b) => {
       switch (sortKey) {
         case "name":  return a.originalFilename.localeCompare(b.originalFilename)
@@ -271,7 +291,7 @@ export function FileGrid({
         default:      return b.decayScore - a.decayScore
       }
     })
-  }, [localFiles, searchQuery, filterCat, sortKey])
+  }, [localFiles, searchQuery, filterCat, sortKey, activeTagFilter])
 
   // ── [P7-2] Bulk helpers ────────────────────────────────────
   function toggleSelect(id: string) {
@@ -325,6 +345,66 @@ export function FileGrid({
   function copyShareLink(fileId: string) {
     navigator.clipboard.writeText(`${window.location.origin}/share/${fileId}`)
       .then(() => { setCopiedLink(true); setTimeout(() => setCopiedLink(false), 2000) })
+  }
+
+  // ── [P9-4] Drag-and-drop handlers ─────────────────────────
+  function onFileDragStart(e: React.DragEvent, fileId: string) {
+    setDragFileId(fileId)
+    e.dataTransfer.effectAllowed = "move"
+    e.dataTransfer.setData("text/plain", fileId)
+  }
+
+  function onFileDragEnd() {
+    setDragFileId(null)
+    setDropTargetId(null)
+  }
+
+  function onFolderDragOver(e: React.DragEvent, folderId: string) {
+    if (!dragFileId) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    setDropTargetId(folderId)
+  }
+
+  function onFolderDragLeave() {
+    setDropTargetId(null)
+  }
+
+  async function onFolderDrop(e: React.DragEvent, folderId: string) {
+    e.preventDefault()
+    const fileId = e.dataTransfer.getData("text/plain") || dragFileId
+    setDragFileId(null)
+    setDropTargetId(null)
+    if (!fileId || fileId === folderId) return
+    await handleMove(fileId, folderId)
+  }
+
+  // [P9-2] Add / remove tags — PATCH /api/files/[id] with { tags }
+  async function handleAddTag(file: File, tag: string) {
+    const clean = tag.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")
+    if (!clean || file.tags.includes(clean)) { setTagInput(""); return }
+    const newTags = [...file.tags, clean]
+    setSavingTag(true)
+    setDetailsFile((d) => d?.id === file.id ? { ...d, tags: newTags } : d)
+    setLocalFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, tags: newTags } : f))
+    await fetch(`/api/files/${file.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: newTags }),
+    })
+    setSavingTag(false)
+    setTagInput("")
+  }
+
+  async function handleRemoveTag(file: File, tag: string) {
+    const newTags = file.tags.filter((t) => t !== tag)
+    setDetailsFile((d) => d?.id === file.id ? { ...d, tags: newTags } : d)
+    setLocalFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, tags: newTags } : f))
+    await fetch(`/api/files/${file.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: newTags }),
+    })
   }
 
   // ─── Rich empty state ──────────────────────────────────────────
@@ -435,7 +515,49 @@ export function FileGrid({
             {displayFiles.length}/{files.length} file{files.length !== 1 ? "s" : ""}
           </span>
         </div>
+
+        {/* [P9-2] Tag filter pills — only shown when files have tags */}
+        {allTags.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <TagIcon className="w-3 h-3 shrink-0" style={{ color: "var(--text-dim)" }} />
+            {activeTagFilter && (
+              <button
+                onClick={() => setActiveTagFilter(null)}
+                className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors"
+                style={{ background: "var(--accent-dim)", color: "var(--accent)", border: "1px solid var(--accent)" }}
+              >
+                <XIcon className="w-2.5 h-2.5" /> Clear
+              </button>
+            )}
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                className="text-xs px-2.5 py-1 rounded-full transition-colors"
+                style={{
+                  background: activeTagFilter === tag ? "var(--accent)" : "var(--bg-elevated)",
+                  color: activeTagFilter === tag ? "#000" : "var(--text-muted)",
+                  border: `1px solid ${activeTagFilter === tag ? "var(--accent)" : "var(--border)"}`,
+                  fontWeight: activeTagFilter === tag ? 600 : 400,
+                  fontFamily: "DM Mono, monospace",
+                }}
+              >
+                #{tag}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* [P9-4] Drag hint — appears while dragging */}
+      {dragFileId && (
+        <div
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full text-xs font-medium pointer-events-none animate-fade-in"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--accent)", color: "var(--accent)", boxShadow: "0 4px 20px var(--accent-glow)" }}
+        >
+          Drop onto a folder to move
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Folder cards */}
@@ -443,8 +565,16 @@ export function FileGrid({
           <button
             key={folder.id}
             onClick={() => onOpenFolder(folder)}
+            onDragOver={(e) => onFolderDragOver(e, folder.id)}
+            onDragLeave={onFolderDragLeave}
+            onDrop={(e) => onFolderDrop(e, folder.id)}
             className="rounded-xl p-4 sm:p-5 text-left transition-all group"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+            style={{
+              background: dropTargetId === folder.id ? "var(--accent-dim)" : "var(--bg-card)",
+              border: `1px solid ${dropTargetId === folder.id ? "var(--accent)" : "var(--border)"}`,
+              transform: dropTargetId === folder.id ? "scale(1.02)" : "scale(1)",
+              transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+            }}
           >
             <div className="flex items-center gap-3">
               <FolderIcon className="w-7 h-7 sm:w-8 sm:h-8 shrink-0" style={{ color: "var(--accent)" }} />
@@ -481,13 +611,17 @@ export function FileGrid({
           return (
             <div
               key={file.id}
+              draggable
+              onDragStart={(e) => onFileDragStart(e, file.id)}
+              onDragEnd={onFileDragEnd}
               className="rounded-xl p-4 sm:p-5 flex flex-col gap-3 transition-all group/card relative"
               style={{
                 background: "var(--bg-card)",
                 border: `1px solid ${isSelected ? "var(--accent)" : isExpiring ? "rgba(239,68,68,0.3)" : isCritical ? "rgba(249,115,22,0.2)" : "var(--border)"}`,
                 boxShadow: isSelected ? "0 0 0 2px var(--accent-dim)" : isExpiring ? "0 0 20px rgba(239,68,68,0.05)" : "none",
-                opacity: isDeleting ? 0.5 : 1,
-                transition: "opacity 0.2s",
+                opacity: dragFileId === file.id ? 0.4 : isDeleting ? 0.5 : 1,
+                cursor: "grab",
+                transition: "opacity 0.15s",
               }}
             >
               {/* [P7-2] Checkbox — shows on hover or when anything is selected */}
@@ -1148,6 +1282,63 @@ export function FileGrid({
               {detailsFile.description && (
                 <Row label="Description"  value={detailsFile.description} />
               )}
+              {/* [P9-2] Tags */}
+              <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                <span className="text-xs shrink-0 flex items-center gap-1.5" style={{ color: "var(--text-muted)", minWidth: 120 }}>
+                  <TagIcon className="w-3 h-3" /> Tags
+                </span>
+                <div className="flex-1 flex flex-col gap-1.5 items-end">
+                  {/* Existing tags */}
+                  {(detailsFile.tags ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 justify-end">
+                      {detailsFile.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                          style={{ background: "var(--accent-dim)", color: "var(--accent)", border: "1px solid rgba(245,166,35,0.3)", fontFamily: "DM Mono, monospace" }}
+                        >
+                          #{tag}
+                          <button
+                            onClick={() => handleRemoveTag(detailsFile, tag)}
+                            className="ml-0.5 hover:opacity-60 transition-opacity"
+                            aria-label={`Remove tag ${tag}`}
+                          >
+                            <XIcon className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Add tag input */}
+                  {detailsFile.tags.length < 10 && (
+                    <div className="flex gap-1 w-full justify-end">
+                      <input
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && tagInput.trim()) handleAddTag(detailsFile, tagInput)
+                          if (e.key === "Escape") setTagInput("")
+                        }}
+                        placeholder="add tag…"
+                        maxLength={30}
+                        className="text-xs px-2 py-1 rounded-lg outline-none flex-1 min-w-0"
+                        style={{ background: "var(--bg-hover)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "DM Mono, monospace" }}
+                      />
+                      <button
+                        onClick={() => { if (tagInput.trim()) handleAddTag(detailsFile, tagInput) }}
+                        disabled={!tagInput.trim() || savingTag}
+                        className="text-xs px-2.5 py-1 rounded-lg disabled:opacity-40 transition-opacity"
+                        style={{ background: "var(--accent)", color: "#000", fontWeight: 600 }}
+                      >
+                        {savingTag ? "…" : "Add"}
+                      </button>
+                    </div>
+                  )}
+                  {detailsFile.tags.length === 0 && !tagInput && (
+                    <span className="text-xs" style={{ color: "var(--text-dim)" }}>No tags yet</span>
+                  )}
+                </div>
+              </div>
               <Row label="File ID"        value={detailsFile.id} mono />
             </div>
 

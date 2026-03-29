@@ -11,11 +11,12 @@ import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import { UpgradeBanner } from "@/components/dashboard/UpgradeBanner"
 import { OnboardingBanner, DecayExplainer } from "@/components/dashboard/OnboardingBanner"
 import { ActivityPanel } from "@/components/dashboard/ActivityPanel"
+import { AnalyticsPanel } from "@/components/dashboard/AnalyticsPanel"
 import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import {
   ChevronRightIcon, HomeIcon, ArrowLeftIcon,
-  AlertTriangleIcon, RefreshCwIcon, HistoryIcon,
+  AlertTriangleIcon, RefreshCwIcon, HistoryIcon, BarChart2Icon,
 } from "lucide-react"
 import type { File, User, Folder } from "@/lib/db/schema"
 
@@ -37,6 +38,8 @@ function DashboardPage() {
   const [folderPath, setFolderPath] = useState<Folder[]>([])
   // [P8-1] Activity panel open/close
   const [activityOpen, setActivityOpen] = useState(false)
+  // [P9-3] Analytics panel open/close (Pro)
+  const [analyticsOpen, setAnalyticsOpen] = useState(false)
 
   const router = useRouter()
 
@@ -222,7 +225,7 @@ function DashboardPage() {
             {/* [P8-1] Activity toggle button — Starter + Pro */}
             {(user?.plan === "starter" || user?.plan === "pro") && (
               <button
-                onClick={() => setActivityOpen((o) => !o)}
+                onClick={() => { setActivityOpen((o) => !o); setAnalyticsOpen(false) }}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
                 style={{
                   background: activityOpen ? "var(--accent-dim)" : "var(--bg-card)",
@@ -232,6 +235,21 @@ function DashboardPage() {
               >
                 <HistoryIcon className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Activity</span>
+              </button>
+            )}
+            {/* [P9-3] Analytics toggle button — Pro only */}
+            {user?.plan === "pro" && (
+              <button
+                onClick={() => { setAnalyticsOpen((o) => !o); setActivityOpen(false) }}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
+                style={{
+                  background: analyticsOpen ? "var(--accent-dim)" : "var(--bg-card)",
+                  border: `1px solid ${analyticsOpen ? "var(--accent)" : "var(--border)"}`,
+                  color: analyticsOpen ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                <BarChart2Icon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Analytics</span>
               </button>
             )}
           </div>
@@ -333,6 +351,15 @@ function DashboardPage() {
             />
           </div>
         )}
+        {/* [P9-3] Analytics panel — inline on desktop, Pro only */}
+        {analyticsOpen && (
+          <div className="hidden lg:block w-[360px] shrink-0">
+            <AnalyticsPanel
+              isOpen={analyticsOpen}
+              onClose={() => setAnalyticsOpen(false)}
+            />
+          </div>
+        )}
         </div>
       </div>
 
@@ -342,6 +369,14 @@ function DashboardPage() {
           plan={user?.plan ?? "free"}
           isOpen={activityOpen}
           onClose={() => setActivityOpen(false)}
+        />
+      </div>
+
+      {/* [P9-3] Analytics panel mobile drawer — Pro only */}
+      <div className="lg:hidden">
+        <AnalyticsPanel
+          isOpen={analyticsOpen}
+          onClose={() => setAnalyticsOpen(false)}
         />
       </div>
 

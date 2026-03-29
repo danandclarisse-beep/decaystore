@@ -70,6 +70,23 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ success: true, isPublic: body.isPublic })
     }
 
+    // ── [P9-2] Tags update ─────────────────────────────────
+    if (Array.isArray(body.tags)) {
+      const tags = (body.tags as unknown[])
+        .filter((t): t is string => typeof t === "string")
+        .map((t) => t.trim().toLowerCase().replace(/\s+/g, "-"))
+        .filter(Boolean)
+        .slice(0, 10)
+
+      const file = await db.query.files.findFirst({
+        where: and(eq(files.id, params.id), eq(files.userId, user.id)),
+      })
+      if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 })
+
+      await db.update(files).set({ tags }).where(eq(files.id, file.id))
+      return NextResponse.json({ success: true, tags })
+    }
+
     // ── Default: renew ─────────────────────────────────────
     const result = await renewFile(params.id, user.id)
     return NextResponse.json(result)
