@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   BellIcon, XIcon, CheckCheckIcon,
   AlertTriangleIcon, AlertCircleIcon, InfoIcon, CheckCircleIcon,
+  MailIcon, CheckIcon,
 } from "lucide-react"
 import type { Notification, NotifSeverity } from "@/hooks/useNotifications"
 
@@ -14,6 +15,10 @@ interface Props {
   onMarkAllRead: () => void
   onClose: () => void
   mobileSheet?: boolean
+  // [P12-2] Email preference toggles — Starter + Pro only
+  plan?: string
+  emailDigestEnabled?: boolean
+  decayWarningsEnabled?: boolean
 }
 
 const SEVERITY_ICON: Record<NotifSeverity, React.ReactNode> = {
@@ -44,8 +49,45 @@ export function NotificationPanel({
   onMarkAllRead,
   onClose,
   mobileSheet = false,
+  plan = "free",
+  emailDigestEnabled: initialDigest = true,
+  decayWarningsEnabled: initialWarnings = true,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
+
+  // [P12-2] Local copies of prefs so toggles are instant
+  const [digest,   setDigest]   = useState(initialDigest)
+  const [warnings, setWarnings] = useState(initialWarnings)
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
+
+  async function savePref(key: string, value: boolean) {
+    setSaving(true)
+    setSaved(false)
+    try {
+      await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleDigestToggle() {
+    const next = !digest
+    setDigest(next)
+    savePref("emailDigestEnabled", next)
+  }
+
+  function handleWarningsToggle() {
+    const next = !warnings
+    setWarnings(next)
+    savePref("decayWarningsEnabled", next)
+  }
 
   // Close on outside click (desktop dropdown only)
   useEffect(() => {
@@ -206,6 +248,77 @@ export function NotificationPanel({
           </div>
         )}
       </div>
+      {/* [P12-2] Email preferences — Starter + Pro only */}
+      {(plan === "starter" || plan === "pro") && (
+        <div
+          className="shrink-0 px-4 py-3"
+          style={{ borderTop: "1px solid var(--border-subtle)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <MailIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
+              <span className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+                Email preferences
+              </span>
+            </div>
+            {saving && <span className="text-xs" style={{ color: "var(--text-dim)" }}>Saving…</span>}
+            {saved && !saving && (
+              <span className="text-xs flex items-center gap-1" style={{ color: "#34d399" }}>
+                <CheckIcon className="w-3 h-3" /> Saved
+              </span>
+            )}
+          </div>
+
+          {/* Weekly digest — Starter + Pro */}
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Weekly decay digest</span>
+            <button
+              role="switch"
+              aria-checked={digest}
+              onClick={handleDigestToggle}
+              disabled={saving}
+              className="relative inline-flex h-4 w-8 items-center rounded-full transition-colors"
+              style={{
+                background: digest ? "var(--accent)" : "var(--bg-hover)",
+                border: "1px solid var(--border)",
+                flexShrink: 0,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              <span
+                className="inline-block h-3 w-3 rounded-full bg-white shadow transition-transform"
+                style={{ transform: digest ? "translateX(16px)" : "translateX(1px)" }}
+              />
+            </button>
+          </div>
+
+          {/* Decay warnings — all tiers, but shown here for Starter+ */}
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Decay warning emails</span>
+            <button
+              role="switch"
+              aria-checked={warnings}
+              onClick={handleWarningsToggle}
+              disabled={saving}
+              className="relative inline-flex h-4 w-8 items-center rounded-full transition-colors"
+              style={{
+                background: warnings ? "var(--accent)" : "var(--bg-hover)",
+                border: "1px solid var(--border)",
+                flexShrink: 0,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              <span
+                className="inline-block h-3 w-3 rounded-full bg-white shadow transition-transform"
+                style={{ transform: warnings ? "translateX(16px)" : "translateX(1px)" }}
+              />
+            </button>
+          </div>
+          <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)" }}>
+            Full preferences in <a href="/account" className="underline" style={{ color: "var(--text-dim)" }}>Account settings →</a>
+          </p>
+        </div>
+      )}
     </div>
   )
 }

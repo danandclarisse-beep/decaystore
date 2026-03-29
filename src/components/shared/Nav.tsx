@@ -2,8 +2,44 @@
 
 import Link from "next/link"
 import { SignedIn, SignedOut } from "@clerk/nextjs"
+import type { PlanKey } from "@/lib/plans"
 
-export function Nav() {
+interface Props {
+  /** Passed from server components that already have the user's plan.
+   *  null = unknown (client-side Clerk state only, e.g. on non-DB pages). */
+  userPlan?: PlanKey | null
+}
+
+// ── Nav link sets by auth state ──────────────────────────
+const ANON_LINKS = [
+  { href: "/pricing", label: "Pricing" },
+  { href: "/about",   label: "About"   },
+  { href: "/contact", label: "Contact" },
+]
+
+// Free users still see Pricing as an upgrade nudge
+const FREE_LINKS = [
+  { href: "/pricing", label: "Pricing" },
+  { href: "/guide",   label: "Guide"   },
+  { href: "/account", label: "Account" },
+]
+
+// Starter/Pro users: guide only (pricing de-emphasised; lives in footer)
+const PAID_LINKS = [
+  { href: "/guide",   label: "Guide"   },
+  { href: "/account", label: "Account" },
+]
+
+export function Nav({ userPlan }: Props = {}) {
+  // Determine which centre-links to render.
+  // We use Clerk's <SignedIn>/<SignedOut> for auth boundary,
+  // and the passed userPlan prop to pick the right link set.
+  function centreLinks(isSignedIn: boolean): typeof ANON_LINKS {
+    if (!isSignedIn) return ANON_LINKS
+    if (!userPlan || userPlan === "free") return FREE_LINKS
+    return PAID_LINKS
+  }
+
   return (
     <nav
       className="sticky top-0 z-50"
@@ -30,18 +66,27 @@ export function Nav() {
           </span>
         </Link>
 
-        {/* Center links */}
-        <div className="hidden md:flex items-center gap-6">
-          {[
-            { href: "/pricing", label: "Pricing" },
-            { href: "/about",   label: "About"   },
-            { href: "/contact", label: "Contact" },
-          ].map((l) => (
-            <Link key={l.href} href={l.href} className="nav-link text-sm">
-              {l.label}
-            </Link>
-          ))}
-        </div>
+        {/* Centre links — anonymous */}
+        <SignedOut>
+          <div className="hidden md:flex items-center gap-6">
+            {ANON_LINKS.map((l) => (
+              <Link key={l.href} href={l.href} className="nav-link text-sm">
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        </SignedOut>
+
+        {/* Centre links — signed in */}
+        <SignedIn>
+          <div className="hidden md:flex items-center gap-6">
+            {centreLinks(true).map((l) => (
+              <Link key={l.href} href={l.href} className="nav-link text-sm">
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        </SignedIn>
 
         {/* Auth buttons */}
         <div className="flex items-center gap-3">

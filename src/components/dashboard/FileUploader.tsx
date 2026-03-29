@@ -8,6 +8,7 @@ import {
   ClockIcon, ChevronDownIcon,
 } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
+import { HelpTooltip } from "@/components/dashboard/HelpTooltip"
 
 interface Props {
   onUploadComplete: () => void
@@ -15,6 +16,8 @@ interface Props {
   currentFolderId: string | null
   // [P8-3] Pass current folder object so uploader can inherit defaultDecayRateDays
   currentFolder?: { defaultDecayRateDays: number | null } | null
+  // [P12-4] Ref so parent can programmatically trigger file picker (keyboard shortcut U)
+  uploadTriggerRef?: React.MutableRefObject<(() => void) | null>
 }
 
 interface UploadState {
@@ -38,7 +41,7 @@ const DECAY_RATE_OPTIONS = [
   { label: "1 year",  value: 365 },
 ] as const
 
-export function FileUploader({ onUploadComplete, plan, currentFolderId, currentFolder }: Props) {
+export function FileUploader({ onUploadComplete, plan, currentFolderId, currentFolder, uploadTriggerRef }: Props) {
   const [uploads, setUploads]         = useState<UploadState[]>([])
   const [isTouch, setIsTouch]         = useState(false)
   const isPro = plan === "pro"
@@ -99,6 +102,10 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
 
       if (!metaRes.ok) {
         const err = await metaRes.json()
+        // [P12-3] 507 = storage quota exceeded — surface a clear actionable message
+        if (metaRes.status === 507) {
+          throw new Error("Storage full — upgrade your plan or delete files to make room.")
+        }
         throw new Error(err.error ?? "Upload failed")
       }
 
@@ -150,10 +157,16 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
     acceptedFiles.forEach(uploadFile)
   }, [uploadFile])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     maxSize: 5 * 1024 * 1024 * 1024,
   })
+
+  // [P12-4] Expose open() so the dashboard's keyboard shortcut (U) can trigger it
+  useEffect(() => {
+    if (uploadTriggerRef) uploadTriggerRef.current = open
+    return () => { if (uploadTriggerRef) uploadTriggerRef.current = null }
+  }, [open, uploadTriggerRef])
 
   const activeUploads  = uploads.filter((u) => u.status === "uploading")
   const finishedCount  = uploads.filter((u) => u.status === "done" || u.status === "error").length
@@ -203,13 +216,18 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
           }}
         >
           <ClockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
-          <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
             Decay rate for new uploads
             {currentFolder?.defaultDecayRateDays && (
-              <span className="ml-1 text-xs" style={{ color: "var(--text-dim)" }}>
+              <span className="text-xs" style={{ color: "var(--text-dim)" }}>
                 (folder default)
               </span>
             )}
+            <HelpTooltip
+              content="How many days before this file is deleted if not accessed. Pro users can set a custom rate per file or inherit from the folder default."
+              guideAnchor="pro"
+              position="top"
+            />
           </span>
           <div className="relative ml-auto">
             <button
@@ -272,7 +290,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
 
       {/* Upload progress list */}
       {uploads.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2" role="status" aria-live="polite" aria-label="Upload progress">
           {activeUploads.length > 1 && (
             <div className="flex items-center justify-between px-1">
               <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>

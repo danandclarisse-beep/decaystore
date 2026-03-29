@@ -1,6 +1,7 @@
 import { formatBytes } from "@/lib/utils"
 import Link from "next/link"
 import { HardDriveIcon } from "lucide-react"
+import { HelpTooltip } from "@/components/dashboard/HelpTooltip"
 
 interface Props {
   used: number
@@ -39,6 +40,11 @@ export function StorageBar({ used, limit, plan, fileCount, fileLimit, loading = 
             <div className="flex items-center gap-2">
               <HardDriveIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
               <p className="text-sm font-semibold">Storage</p>
+              <HelpTooltip
+                content="Tracks total bytes used across all your files. At 100%, new uploads are blocked until you free space or upgrade."
+                guideAnchor="getting-started"
+                position="bottom"
+              />
             </div>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
               {formatBytes(used)} / {formatBytes(limit)}
@@ -67,6 +73,27 @@ export function StorageBar({ used, limit, plan, fileCount, fileLimit, loading = 
       <p className="text-xs mt-2" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
         {pct.toFixed(1)}% used
       </p>
+      {/* [P12-3] Warn at 80% — uploads are blocked at 100% */}
+      {pct >= 80 && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs leading-relaxed"
+          style={{
+            background: pct >= 90 ? "rgba(239,68,68,0.08)" : "rgba(249,115,22,0.08)",
+            border:     `1px solid ${pct >= 90 ? "rgba(239,68,68,0.25)" : "rgba(249,115,22,0.25)"}`,
+            color:      pct >= 90 ? "#ef4444" : "#f97316",
+          }}
+        >
+          <span className="shrink-0 mt-0.5">⚠️</span>
+          <span>
+            You&apos;ve used {pct.toFixed(0)}% of your storage. Uploads will be rejected at 100%.{" "}
+            {plan !== "pro" && (
+              <Link href="/pricing" style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}>
+                Upgrade →
+              </Link>
+            )}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

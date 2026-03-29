@@ -32,6 +32,8 @@ export const users = pgTable("users", {
   createdAt:             timestamp("created_at").defaultNow().notNull(),
   updatedAt:             timestamp("updated_at").defaultNow().notNull(),
   emailDigestEnabled:    boolean("email_digest_enabled").notNull().default(true),
+  // [P12-1] Lets users silence the 50%/90%/pre-deletion decay warning emails.
+  decayWarningsEnabled:  boolean("decay_warnings_enabled").notNull().default(true),
 })
 
 // ─── Folders ──────────────────────────────────────────────

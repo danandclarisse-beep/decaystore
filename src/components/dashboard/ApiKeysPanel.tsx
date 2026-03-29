@@ -6,6 +6,7 @@ import {
   CheckIcon, XIcon, AlertCircleIcon, EyeOffIcon,
 } from "lucide-react"
 import { formatDateTime, formatRelativeTime } from "@/lib/utils"
+import { HelpTooltip } from "@/components/dashboard/HelpTooltip"
 
 interface ApiKeyDisplay {
   id:         string
@@ -111,6 +112,11 @@ export function ApiKeysPanel({ isPro }: Props) {
           <span className="text-sm font-semibold" style={{ fontFamily: "Syne, sans-serif" }}>
             API Keys
           </span>
+          <HelpTooltip
+            content="Generate keys to access your files programmatically. The raw key is shown exactly once — store it securely."
+            guideAnchor="pro"
+            position="bottom"
+          />
           <span
             className="text-xs px-1.5 py-0.5 rounded-full"
             style={{ background: "var(--accent-dim)", color: "var(--accent)", fontFamily: "DM Mono, monospace" }}

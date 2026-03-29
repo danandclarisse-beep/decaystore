@@ -64,13 +64,17 @@ export function useNotifications(
   const [notifications, setNotifications] = useState<Notification[]>([])
   const dismissedRef = useRef<Set<string>>(getDismissed())
 
-  // ─── Derive persistent notifications from live data ───────────
+  // ✅ Stable refs for callbacks — never stale, never cause re-renders
+  const onRenewFileRef = useRef(onRenewFile)
+  const onNavigatePricingRef = useRef(onNavigatePricing)
+  useEffect(() => { onRenewFileRef.current = onRenewFile }, [onRenewFile])
+  useEffect(() => { onNavigatePricingRef.current = onNavigatePricing }, [onNavigatePricing])
+
   const deriveFromData = useCallback(() => {
     if (!user) return []
     const dismissed = dismissedRef.current
     const derived: Notification[] = []
 
-    // ── File decay alerts ──────────────────────────────────────
     for (const file of files) {
       const score = calculateDecayScore(
         new Date(file.lastAccessedAt),
@@ -81,36 +85,31 @@ export function useNotifications(
         const id = `decay-critical-${file.id}`
         if (!dismissed.has(id)) {
           derived.push({
-            id,
-            severity: "critical",
-            title: "File expiring soon",
+            id, severity: "critical", title: "File expiring soon",
             body: `"${file.originalFilename}" deletes in ${getTimeUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)}`,
-            action: onRenewFile
-              ? { label: "Renew now", onClick: () => onRenewFile(file.id) }
+            action: onRenewFileRef.current  // ✅ use ref
+              ? { label: "Renew now", onClick: () => onRenewFileRef.current!(file.id) }
               : undefined,
-            createdAt: Date.now(),
-            read: false,
+            createdAt: Date.now(), read: false,
           })
         }
       } else if (score >= DECAY_THRESHOLDS.WARN) {
         const id = `decay-warn-${file.id}`
         if (!dismissed.has(id)) {
           derived.push({
-            id,
-            severity: "warning",
-            title: "File decaying",
+            id, severity: "warning", title: "File decaying",
             body: `"${file.originalFilename}" — ${getDaysUntilDeletion(new Date(file.lastAccessedAt), file.decayRateDays)}d left before deletion`,
-            action: onRenewFile
-              ? { label: "Renew", onClick: () => onRenewFile(file.id) }
+            action: onRenewFileRef.current  // ✅ use ref
+              ? { label: "Renew", onClick: () => onRenewFileRef.current!(file.id) }
               : undefined,
-            createdAt: Date.now(),
-            read: false,
+            createdAt: Date.now(), read: false,
           })
         }
       }
     }
 
-    // ── Storage warnings ───────────────────────────────────────
+    // storage + file limit sections — replace onNavigatePricing with onNavigatePricingRef.current
+    // (same pattern — just swap every onNavigatePricing reference)
     const storageLimit = PLAN_STORAGE_LIMITS[user.plan as keyof typeof PLAN_STORAGE_LIMITS]
     const storagePct   = storageLimit > 0 ? (user.storageUsedBytes / storageLimit) * 100 : 0
 
@@ -118,35 +117,28 @@ export function useNotifications(
       const id = "storage-critical"
       if (!dismissed.has(id)) {
         derived.push({
-          id,
-          severity: "critical",
-          title: "Storage almost full",
+          id, severity: "critical", title: "Storage almost full",
           body: `${storagePct.toFixed(0)}% used — uploads will fail when full`,
-          action: onNavigatePricing
-            ? { label: "Upgrade", onClick: onNavigatePricing }
+          action: onNavigatePricingRef.current  // ✅
+            ? { label: "Upgrade", onClick: onNavigatePricingRef.current }
             : undefined,
-          createdAt: Date.now(),
-          read: false,
+          createdAt: Date.now(), read: false,
         })
       }
     } else if (storagePct >= 80) {
       const id = "storage-warning"
       if (!dismissed.has(id)) {
         derived.push({
-          id,
-          severity: "warning",
-          title: "Storage running low",
+          id, severity: "warning", title: "Storage running low",
           body: `${storagePct.toFixed(0)}% of your ${user.plan} storage used`,
-          action: onNavigatePricing
-            ? { label: "Upgrade", onClick: onNavigatePricing }
+          action: onNavigatePricingRef.current  // ✅
+            ? { label: "Upgrade", onClick: onNavigatePricingRef.current }
             : undefined,
-          createdAt: Date.now(),
-          read: false,
+          createdAt: Date.now(), read: false,
         })
       }
     }
 
-    // ── File limit warnings ────────────────────────────────────
     const plan      = PLANS[user.plan as keyof typeof PLANS]
     const fileLimit = plan?.maxFiles ?? 10
     const filePct   = files.length / fileLimit
@@ -155,33 +147,27 @@ export function useNotifications(
       const id = "filelimit-critical"
       if (!dismissed.has(id)) {
         derived.push({
-          id,
-          severity: "critical",
-          title: "File limit almost reached",
+          id, severity: "critical", title: "File limit almost reached",
           body: `${files.length} / ${fileLimit} files used on ${plan?.name ?? user.plan} plan`,
-          action: onNavigatePricing
-            ? { label: "Upgrade", onClick: onNavigatePricing }
+          action: onNavigatePricingRef.current  // ✅
+            ? { label: "Upgrade", onClick: onNavigatePricingRef.current }
             : undefined,
-          createdAt: Date.now(),
-          read: false,
+          createdAt: Date.now(), read: false,
         })
       }
     } else if (filePct >= 0.8) {
       const id = "filelimit-warning"
       if (!dismissed.has(id)) {
         derived.push({
-          id,
-          severity: "warning",
-          title: "Approaching file limit",
+          id, severity: "warning", title: "Approaching file limit",
           body: `${files.length} / ${fileLimit} files used`,
-          createdAt: Date.now(),
-          read: false,
+          createdAt: Date.now(), read: false,
         })
       }
     }
 
     return derived
-  }, [files, user, onRenewFile, onNavigatePricing])
+  }, [files, user])  // ✅ callbacks removed from deps — they're stable via refs now
 
   // ─── Merge derived + session (toast) notifications ────────────
   useEffect(() => {

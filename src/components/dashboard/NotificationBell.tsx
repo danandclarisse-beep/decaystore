@@ -13,6 +13,10 @@ interface Props {
   onMarkAllRead: () => void
   /** "header" = inline in header, "float" = fixed bottom-right FAB */
   variant?: "header" | "float"
+  // [P12-2] Email preference props — forwarded to NotificationPanel
+  plan?: string
+  emailDigestEnabled?: boolean
+  decayWarningsEnabled?: boolean
 }
 
 export function NotificationBell({
@@ -22,6 +26,9 @@ export function NotificationBell({
   onDismissAll,
   onMarkAllRead,
   variant = "header",
+  plan = "free",
+  emailDigestEnabled = true,
+  decayWarningsEnabled = true,
 }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef    = useRef<HTMLDivElement>(null)
@@ -95,6 +102,9 @@ export function NotificationBell({
                 onMarkAllRead={onMarkAllRead}
                 onClose={() => setOpen(false)}
                 mobileSheet={false}
+                plan={plan}
+                emailDigestEnabled={emailDigestEnabled}
+                decayWarningsEnabled={decayWarningsEnabled}
               />
             </div>
           </div>
@@ -109,6 +119,8 @@ export function NotificationBell({
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className="relative flex items-center justify-center w-9 h-9 rounded-xl transition-colors"
         style={{
           background: open ? "var(--bg-hover)" : "transparent",
@@ -144,6 +156,9 @@ export function NotificationBell({
           onDismissAll={onDismissAll}
           onMarkAllRead={onMarkAllRead}
           onClose={() => setOpen(false)}
+          plan={plan}
+          emailDigestEnabled={emailDigestEnabled}
+          decayWarningsEnabled={decayWarningsEnabled}
         />
       )}
     </div>

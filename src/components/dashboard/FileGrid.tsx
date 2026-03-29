@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import {
   RefreshCwIcon, Trash2Icon, DownloadIcon, ClockIcon,
   FolderIcon, PencilIcon, FolderInputIcon, GitBranchIcon,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { formatBytes, formatRelativeTime, formatDateTime, getMimeTypeIcon } from "@/lib/utils"
 import { getDecayColor, getDecayLabel, getDaysUntilDeletion, getTimeUntilDeletion, calculateDecayScore } from "@/lib/decay-utils"
+import { HelpTooltip } from "@/components/dashboard/HelpTooltip"
 import type { File, Folder, FileVersion } from "@/lib/db/schema"
 
 // ─── MIME-type category helpers ───────────────────────────
@@ -55,13 +56,15 @@ interface Props {
   onRenewedToast?: (filename: string) => void
   /** Ref so parent (dashboard page) can call handleRenew for notification actions */
   renewFileRef?: React.MutableRefObject<((fileId: string) => Promise<void>) | null>
+  /** [P12-4] Ref so parent can focus search input via keyboard shortcut (/) */
+  searchInputRef?: React.MutableRefObject<HTMLInputElement | null>
 }
 
 type ActionKey = string
 
 export function FileGrid({
   files, folders, allFolders, currentFolderId, userPlan,
-  onRefresh, onOpenFolder, onRenewedToast, renewFileRef,
+  onRefresh, onOpenFolder, onRenewedToast, renewFileRef, searchInputRef,
 }: Props) {
   const [localFiles, setLocalFiles]             = useState<File[]>(files)
   useEffect(() => { setLocalFiles(files) }, [files])
@@ -465,6 +468,7 @@ export function FileGrid({
           <div className="relative flex-1">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--text-dim)" }} />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search files…"
               value={searchQuery}
@@ -629,6 +633,8 @@ export function FileGrid({
                 onClick={() => toggleSelect(file.id)}
                 className={`absolute top-3 left-3 z-10 rounded-md transition-opacity ${selectedIds.size > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
                 title={isSelected ? "Deselect" : "Select"}
+                aria-label={isSelected ? `Deselect ${file.originalFilename}` : `Select ${file.originalFilename}`}
+                aria-pressed={isSelected}
               >
                 {isSelected
                   ? <CheckSquareIcon className="w-4 h-4" style={{ color: "var(--accent)" }} />
@@ -838,15 +844,24 @@ export function FileGrid({
                             <InfoIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Details
                           </button>
                           {userPlan === "pro" && (
-                            <button
-                              onClick={() => { handleTogglePublic(file); setOpenMenuId(null) }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
-                            >
-                              {file.isPublic
-                                ? <><LockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Make private</>
-                                : <><GlobeIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Share publicly</>
-                              }
-                            </button>
+                            <div className="flex items-center">
+                              <button
+                                onClick={() => { handleTogglePublic(file); setOpenMenuId(null) }}
+                                className="flex-1 flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors"
+                              >
+                                {file.isPublic
+                                  ? <><LockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Make private</>
+                                  : <><GlobeIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Share publicly</>
+                                }
+                              </button>
+                              <span className="pr-2">
+                                <HelpTooltip
+                                  content="Creates a public link. Anyone with the link can view and download. Each visit resets the file's decay clock."
+                                  guideAnchor="pro"
+                                  position="left"
+                                />
+                              </span>
+                            </div>
                           )}
                           {userPlan === "pro" && file.isPublic && (
                             <button
@@ -878,10 +893,12 @@ export function FileGrid({
       {/* ── [P7-2] Bulk action bar ── */}
       {selectedIds.size > 0 && (
         <div
+          role="toolbar"
+          aria-label={`${selectedIds.size} file${selectedIds.size !== 1 ? "s" : ""} selected`}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl"
           style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", backdropFilter: "blur(12px)" }}
         >
-          <button onClick={clearSelection} className="p-1 rounded-md" style={{ color: "var(--text-dim)" }} title="Clear selection">
+          <button onClick={clearSelection} className="p-1 rounded-md" style={{ color: "var(--text-dim)" }} title="Clear selection" aria-label="Clear selection">
             <XIcon className="w-4 h-4" />
           </button>
           <span className="text-xs font-semibold px-2" style={{ color: "var(--text-muted)" }}>

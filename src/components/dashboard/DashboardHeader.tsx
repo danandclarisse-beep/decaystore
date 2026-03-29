@@ -13,6 +13,7 @@ import {
   LifeBuoyIcon,
   SunIcon,
   MoonIcon,
+  SettingsIcon,
 } from "lucide-react"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import type { User } from "@/lib/db/schema"
@@ -160,6 +161,9 @@ export function DashboardHeader({
               onDismissAll={onDismissAllNotifs}
               onMarkAllRead={onMarkAllRead}
               variant="header"
+              plan={user?.plan ?? "free"}
+              emailDigestEnabled={user?.emailDigestEnabled ?? true}
+              decayWarningsEnabled={(user as unknown as Record<string, unknown>)?.decayWarningsEnabled as boolean ?? true}
             />
 
             {/* [P9-1] Theme toggle */}
@@ -174,6 +178,21 @@ export function DashboardHeader({
                 : <MoonIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
               }
             </button>
+
+            {/* Account settings link */}
+            <Link
+              href="/account"
+              className="text-xs px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-1.5 hover:opacity-85 transition-all pointer-events-auto"
+              style={{
+                color:      "var(--text-muted)",
+                border:     "1px solid var(--border)",
+                background: "var(--bg-card)",
+              }}
+              aria-label="Account settings"
+            >
+              <SettingsIcon className="w-3 h-3" />
+              Account
+            </Link>
 
             {/* Support button — Starter + Pro */}
             {(user?.plan === "starter" || user?.plan === "pro") && (
@@ -256,6 +275,17 @@ export function DashboardHeader({
                         Signed in as <span style={{ color: "var(--text)" }}>{firstName}</span>
                       </div>
                     )}
+
+                    {/* [P12-1] Account settings in mobile menu */}
+                    <Link
+                      href="/account"
+                      className="flex items-center gap-2.5 px-4 py-3 text-sm w-full transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: "var(--text)" }}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <SettingsIcon className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                      Account settings
+                    </Link>
 
                     {/* [P9-1] Theme toggle in mobile menu */}
                     <button

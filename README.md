@@ -16,6 +16,8 @@ A Next.js SaaS where uploaded files slowly decay and auto-delete if not accessed
 6. [Full-System Audit — Beta 9](#full-system-audit--beta-9)
 7. [Change Log](#change-log)
 8. [Roadmap](#roadmap)
+   - [Phase 11 — Home Page Personalisation & User Guide](#phase-11--home-page-personalisation--comprehensive-user-guide)
+   - [Phase 12 — Account Settings & Email Preferences](#phase-12--account-settings--email-preferences)
 9. [Legal & License](#legal--license)
 
 ---
@@ -594,6 +596,174 @@ Implemented using the native HTML5 Drag and Drop API — no third-party library 
 | `src/components/dashboard/FileGrid.tsx` | Native HTML5 DnD: drag state, handlers, file card `draggable`, folder card drop zones, drag hint toast |
 
 ---
+### Phase 11 — Home Page Personalisation & Comprehensive User Guide ✅
+
+**Theme:** A registered user should never see the same page a stranger sees. Every user, on every tier, should understand exactly what they have and exactly what to do next.
+
+**No DB migration required.**
+
+- **[P11-1] Personalised hero for signed-in users** — `src/app/page.tsx` is now a server component that calls `auth()` and `getUserByClerkId()`. Signed-in users see a personalised hero: first-name greeting, inline storage bar (colour-shifts amber at 70%, red at 90%), file count, and a health pill ("All clear" / "N files need attention"). CTAs adapt: Free/Starter users see "Go to dashboard" + "Upgrade to [nextPlan]"; Pro users see "Go to dashboard" only. New `PersonalisedHero` component in `src/components/home/`.
+
+- **[P11-2] Live file preview for returning users** — The static hard-coded decay demo widget is replaced with the user's real top-4 most-decayed files, fetched server-side (`SELECT … ORDER BY decay_score DESC LIMIT 4`). File names, live decay bars, labels, and days remaining are all real data. Users with no files still see the static demo with a caption: "Example — your files will appear here." The widget header switches from `decay_preview.demo` to `your_files.live` when showing real data, with a "View all →" shortcut to the dashboard.
+
+- **[P11-3] Dedicated `/guide` page with all-tier coverage** — New `src/app/guide/page.tsx` (server component). Four sections behind a sticky `GuideNav` sidebar (`src/components/shared/GuideNav.tsx`) with `IntersectionObserver`-driven active-link highlighting: **Getting started** (decay mechanics, colour scale visual, decay windows, email warning timeline, upload flow, renew, storage bar), **Organising your files** (folders, search/filter, bulk actions, tags, drag-and-drop), **Starter features** (activity log, weekly digest, priority support SLA), **Pro features** (custom decay rates, folder defaults, public share links, analytics panel, API key management, REST API reference). Each section carries plan badges. Inline `DecayScale` and `EmailTimeline` visuals built in pure CSS/TSX, no external libraries.
+
+- **[P11-4] Contextual help tooltips in the dashboard** — New `src/components/dashboard/HelpTooltip.tsx`: a 16×16 px `?` button that toggles a 220 px floating tooltip with a "Learn more →" deep-link into `/guide`. No external library — `useState` + `useEffect` outside-click handler + CSS `position: absolute`. Applied to six locations: StorageBar heading, FileUploader decay rate selector, Activity toggle (dashboard page), Analytics toggle (dashboard page), ApiKeysPanel heading, FileGrid share toggle.
+
+- **[P11-5] Auth-aware navigation** — `src/components/shared/Nav.tsx` accepts an optional `userPlan` prop (passed from server pages that already have the user). Link sets: **anonymous** → Pricing, About, Contact; **Free** → Pricing, Guide; **Starter/Pro** → Guide only. About and Contact de-emphasised to footer for signed-in users. "Guide" link present for all authenticated tiers.
+
+- **[P11-6] Plan-aware CTAs on the home page** — The bottom CTA section is now conditional on plan, using `PLANS[nextPlan].features` from `plans.ts` (no hardcoding). Free users see Starter feature list + upgrade CTA. Starter users see Pro feature list + upgrade CTA. Pro users see a satisfaction message with no upsell.
+
+- **[P11-7] Dismissible upgrade nudge strip** — New `src/components/home/NudgeStrip.tsx` (client component). Renders a slim amber strip at the top of the page for Free and Starter signed-in users, between the Nav and the hero. Dismissal is stored in `sessionStorage` keyed by `ds_nudge_dismissed_{plan}` — disappears for the rest of the session, reappears on the next visit.
+
+**Files changed:**
+
+| File | Status |
+|---|---|
+| `src/app/page.tsx` | Modified — server component, auth fetch, P11-1/2/6/7 |
+| `src/components/home/PersonalisedHero.tsx` | New |
+| `src/components/home/NudgeStrip.tsx` | New |
+| `src/components/shared/Nav.tsx` | Modified — auth-aware link sets, `userPlan` prop |
+| `src/app/guide/page.tsx` | New |
+| `src/components/shared/GuideNav.tsx` | New |
+| `src/components/dashboard/HelpTooltip.tsx` | New |
+| `src/components/dashboard/StorageBar.tsx` | Modified — HelpTooltip on heading |
+| `src/components/dashboard/FileUploader.tsx` | Modified — HelpTooltip on decay rate selector |
+| `src/app/dashboard/page.tsx` | Modified — HelpTooltip on Activity + Analytics toggles |
+| `src/components/dashboard/ApiKeysPanel.tsx` | Modified — HelpTooltip on panel heading |
+| `src/components/dashboard/FileGrid.tsx` | Modified — HelpTooltip on share toggle |
+
+---
+
+### Phase 12 — Account Settings & Email Preferences
+
+**Theme:** Users need a single place to manage their account — profile details, notification preferences, billing, and danger-zone actions. Currently these are scattered (billing via LemonSqueezy portal only, no UI for digest opt-out, no way to delete an account).
+
+**No new external services required.** Billing portal already exists via LemonSqueezy. One migration required.
+
+---
+
+#### [P12-1] Account settings page at `/account`
+
+**Problem:** There is no `/account` or `/settings` route. Users have no place to see or change anything about their account outside the dashboard header's `mailto:` support link.
+
+**Fix:** Create `src/app/account/page.tsx` as a server component. Sections, rendered as cards on a centred single-column layout:
+
+- **Profile** — Display name (read from Clerk, link to Clerk's hosted profile page to change). Email address (read-only, from Clerk). Plan badge with upgrade/portal link.
+- **Notifications** — Email digest toggle (Starter + Pro). Decay warning emails toggle (all tiers — currently always on). Each toggle is a `PATCH /api/account` call that writes to the `users` table.
+- **Billing** — Current plan, renewal date (fetched from LemonSqueezy API). "Manage billing →" button that calls the existing `/api/stripe/portal` redirect. Cancel subscription link (opens portal).
+- **Danger zone** — "Delete my account" button. Opens an inline confirmation that requires typing `DELETE` before proceeding. Calls `DELETE /api/account` — revokes all API keys, deletes all files (with R2 cleanup), deletes the user row. This closes the last significant compliance gap.
+
+Add "Account" to the signed-in nav (between Guide and Dashboard) and to the dashboard header user menu.
+
+**Migration required:**
+
+```sql
+ALTER TABLE users ADD COLUMN decay_warnings_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+```
+
+(`email_digest_enabled` was already added in Phase 7.)
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/app/account/page.tsx` | New — account settings page |
+| `src/app/api/account/route.ts` | New — `PATCH` (update prefs) and `DELETE` (delete account + R2 cleanup) |
+| `src/components/shared/Nav.tsx` | Add "Account" link for signed-in users |
+| `src/components/dashboard/DashboardHeader.tsx` | Add "Account settings" to user menu |
+| `src/lib/db/schema.ts` | Add `decayWarningsEnabled` column |
+
+---
+
+#### [P12-2] Email preferences management in the dashboard
+
+**Problem:** `emailDigestEnabled` exists in the DB (added Phase 7) but there is no UI to toggle it. Users who want to opt out of the weekly digest cannot — they must contact support.
+
+**Fix:** Expose the toggle in the new `/account` settings page (P12-1). Also add it to `NotificationPanel.tsx` as a quick-toggle for Starter + Pro users who access it from the dashboard. A `PATCH /api/account` call with `{ emailDigestEnabled: boolean }` writes the value. Saving shows a brief "Saved" toast using the existing toast system.
+
+A second toggle for decay warning emails (`decayWarningsEnabled`, new column from P12-1 migration) lets users silence the 50%/90%/pre-deletion emails if they prefer to manage decay manually. Free users see this toggle too — a warning is shown: `"Disabling warnings means you may lose files without notice."`
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/components/dashboard/NotificationPanel.tsx` | Add email preference toggles (Starter + Pro) |
+| `src/app/api/account/route.ts` | Already added in P12-1 |
+
+---
+
+#### [P12-3] Storage quota warning at 80%
+
+**Problem:** Users currently receive no warning when they're approaching their storage limit — only when individual files are decaying. A user who fills 80% of their quota with no heads-up may hit the wall mid-upload with a cryptic 413 error.
+
+**Fix:** In `StorageBar.tsx`, when `storageUsedBytes / limit >= 0.80`, render an amber warning callout below the bar: `"You've used 80% of your storage. Uploads will be rejected at 100%. [Upgrade →]"` (upgrade link for Free/Starter; no link for Pro). This is a purely client-side UI change — no API call. The data is already available in the dashboard page props.
+
+Additionally, add a server-side check in `POST /api/files` that returns `507 Insufficient Storage` (correct HTTP status) instead of the current `400` when a user is at quota. Update the `FileUploader` error handler to surface this with a friendly message: `"Storage full — upgrade your plan or delete files to make room."`
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/components/dashboard/StorageBar.tsx` | 80% amber callout, upgrade link |
+| `src/app/api/files/route.ts` | Return `507` at quota, not `400` |
+| `src/components/dashboard/FileUploader.tsx` | Handle `507` with friendly copy |
+
+---
+
+#### [P12-4] Keyboard shortcuts & accessibility pass
+
+**Problem:** The dashboard has no keyboard navigation beyond browser defaults. Power users (who are most likely to be on Starter or Pro) cannot operate it efficiently without a mouse. Additionally, several interactive elements (the notification bell, the analytics toggle, bulk action checkboxes) lack `aria-label` attributes, which breaks screen-reader navigation.
+
+**Fix:** Add a keyboard shortcut layer using a single `keydown` listener on `window` (registered in a `useEffect` in `dashboard/page.tsx`, cleaned up on unmount). Shortcuts:
+
+| Key | Action |
+|---|---|
+| `U` | Focus the file upload input |
+| `N` | Create new folder (opens the folder name input) |
+| `/` | Focus the search input |
+| `Escape` | Close any open modal or panel |
+| `?` | Open a keyboard shortcut reference modal |
+
+Shortcut hints are shown in a small pill beside each trigger element (e.g. `⌘U` on the upload button) — visible only when `navigator.userAgentData` or the `platform` hint indicates a non-touch device.
+
+Accessibility fixes across the dashboard: `aria-label` on all icon-only buttons (notification bell, theme toggle, close buttons), `role="status"` on the upload progress indicator, `aria-live="polite"` on the toast container.
+
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `src/app/dashboard/page.tsx` | Global `keydown` listener, shortcut modal |
+| `src/components/dashboard/DashboardHeader.tsx` | `aria-label` on icon buttons, shortcut hints |
+| `src/components/dashboard/NotificationBell.tsx` | `aria-label`, `aria-expanded` |
+| `src/components/dashboard/FileUploader.tsx` | `aria-label` on upload button, `role="status"` on progress |
+| `src/components/dashboard/FileGrid.tsx` | `aria-label` on bulk checkboxes and action bar |
+
+---
+
+**Migration required for Phase 12:**
+
+```sql
+ALTER TABLE users ADD COLUMN decay_warnings_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+```
+
+**Full Phase 12 files changed:**
+
+| File | Status |
+|---|---|
+| `src/app/account/page.tsx` | New |
+| `src/app/api/account/route.ts` | New |
+| `src/components/shared/Nav.tsx` | Modified |
+| `src/components/dashboard/DashboardHeader.tsx` | Modified |
+| `src/components/dashboard/NotificationPanel.tsx` | Modified |
+| `src/components/dashboard/StorageBar.tsx` | Modified |
+| `src/components/dashboard/FileUploader.tsx` | Modified |
+| `src/components/dashboard/FileGrid.tsx` | Modified |
+| `src/app/api/files/route.ts` | Modified |
+| `src/app/dashboard/page.tsx` | Modified |
+| `src/lib/db/schema.ts` | Modified |
+
+---
 
 ### Full Roadmap Summary
 
@@ -609,6 +779,8 @@ Implemented using the native HTML5 Drag and Drop API — no third-party library 
 | P8 | Transparency & trust | ✅ Done |
 | P9 | Polish & retention | ✅ Done (P9-4 deferred) |
 | P10 | Audit fixes & drag-and-drop | ✅ Done |
+| P11 | Home page personalisation & user guide | ✅ Done |
+| P12 | Account settings & email preferences | ⏳ Planned |
 
 ---
 

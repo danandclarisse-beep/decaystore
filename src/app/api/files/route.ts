@@ -144,12 +144,12 @@ export async function POST(request: Request) {
       if (!folder) return NextResponse.json({ error: "Folder not found" }, { status: 404 })
     }
 
-    // Check storage limit
+    // Check storage limit — [P12-3] use 507 Insufficient Storage (correct HTTP status)
     const storageLimit = PLAN_STORAGE_LIMITS[user.plan]
     if (user.storageUsedBytes + sizeBytes > storageLimit) {
       return NextResponse.json(
-        { error: "Storage limit exceeded. Please upgrade your plan." },
-        { status: 402 }
+        { error: "Storage full — upgrade your plan or delete files to make room." },
+        { status: 507 }
       )
     }
 

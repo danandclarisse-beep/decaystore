@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import {
   FolderIcon, FolderPlusIcon, HomeIcon,
   PencilIcon, Trash2Icon, XIcon, CheckIcon,
@@ -27,9 +27,11 @@ interface Props {
   onRefresh: () => void
   /** Pass user plan to conditionally show Pro-only decay settings */
   plan?: string
+  /** [P12-4] Ref so parent can trigger new-folder via keyboard shortcut (N) */
+  newFolderBtnRef?: React.MutableRefObject<HTMLButtonElement | null>
 }
 
-export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh, plan }: Props) {
+export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh, plan, newFolderBtnRef }: Props) {
   const isPro = plan === "pro"
 
   const [creating, setCreating]           = useState(false)
@@ -266,7 +268,9 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
             </div>
           </div>
         ) : (
-          <button onClick={() => setCreating(true)}
+          <button
+            ref={newFolderBtnRef}
+            onClick={() => setCreating(true)}
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors"
             style={{ color: "var(--text-dim)" }}>
             <FolderPlusIcon className="w-4 h-4" /> New folder
