@@ -1,3 +1,8 @@
+// [Monitoring] Sentry wraps the Next.js config to inject its webpack plugin.
+// This enables source map uploads, performance tracing, and error capture.
+// The withSentryConfig call must be the outermost wrapper.
+const { withSentryConfig } = require("@sentry/nextjs")
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // [S5] Removed serverActions.bodySizeLimit: '100mb' — uploads go directly
@@ -7,8 +12,8 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: '*.r2.dev',
+        protocol: "https",
+        hostname: "*.r2.dev",
       },
     ],
   },
@@ -17,59 +22,57 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
           // Prevent the page being embedded in an iframe (clickjacking)
-          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: "X-Frame-Options", value: "DENY" },
           // Stop browsers MIME-sniffing responses away from declared content-type
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: "X-Content-Type-Options", value: "nosniff" },
           // Restrict referrer info to same-origin only
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // Disable unnecessary browser features
           {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
           },
           // Force HTTPS for 1 year; include subdomains
           {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=31536000; includeSubDomains',
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains",
           },
           // Content Security Policy
-          // - default-src 'self': block all unlisted sources by default
-          // - script-src: allow self + Next.js inline runtime + Clerk hosted scripts
-          // - worker-src: Clerk spawns blob: Web Workers internally for token polling;
-          //   without this directive, script-src is used as fallback and blocks them.
-          // - style-src: allow self + inline styles (Tailwind/CSS-in-JS)
-          // - img-src: allow self + R2 (images) + data URIs (avatars) + blob (canvas previews)
-          // - media-src: allow R2 presigned URLs for <video> and <audio> preview
-          // - frame-src: allow Clerk hosted UI iframes + R2 for PDF/iframe file preview
-          // - object-src: allow R2 presigned URLs for <object>-based PDF embed (Chrome)
-          // - font-src: allow self + Google Fonts (Syne / DM Sans / DM Mono)
-          // - connect-src: allow self + Clerk API + R2 upload/download endpoint
+          // Domains added for monitoring:
+          // - Sentry:          https://*.sentry.io (connect-src for error/trace ingestion)
+          //                    https://browser.sentry-cdn.com (script-src for Sentry SDK)
+          // - Google Analytics: https://www.googletagmanager.com (script-src, connect-src)
+          //                     https://www.google-analytics.com (connect-src, img-src)
+          //                     https://*.analytics.google.com (connect-src)
+          // - BetterStack:     No client-side script — server-only log drain, no CSP changes needed
+          // - Vercel Analytics: https://va.vercel-scripts.com (script-src, connect-src)
           {
-            key: 'Content-Security-Policy',
+            key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
-              // Clerk spawns blob: Web Workers; Cloudflare Turnstile uses blob: workers too
+              // Clerk + Cloudflare CAPTCHA + Sentry SDK + GTM + Vercel Analytics
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.decaystore.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://browser.sentry-cdn.com https://www.googletagmanager.com https://va.vercel-scripts.com",
+              // Clerk + Cloudflare Turnstile Web Workers
               "worker-src blob: https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              // blob: needed for canvas/image preview via createObjectURL
-              "img-src 'self' data: blob: https://*.r2.dev https://*.r2.cloudflarestorage.com https://img.clerk.com",
-              // R2 presigned URLs for <video> and <audio> preview
+              // blob: for canvas previews, img.clerk.com for avatars, GA pixel
+              "img-src 'self' data: blob: https://*.r2.dev https://*.r2.cloudflarestorage.com https://img.clerk.com https://www.google-analytics.com",
+              // R2 presigned URLs for audio/video preview
               "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
-              // Clerk hosted UI iframes + Cloudflare Turnstile iframe + R2 preview
+              // Clerk iframes + Cloudflare CAPTCHA iframe + R2 preview
               "frame-src https://clerk.decaystore.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.r2.cloudflarestorage.com",
-              // R2 presigned URLs for <object>/<embed>-based PDF preview (Chrome fallback)
+              // R2 for PDF embed (Chrome fallback)
               "object-src https://*.r2.cloudflarestorage.com",
               "font-src 'self' https://fonts.gstatic.com",
-              // Clerk API + Cloudflare Turnstile verification endpoint + R2
-              "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.r2.cloudflarestorage.com",
+              // Clerk + Cloudflare + R2 + Sentry ingestion + GA + Vercel Analytics
+              "connect-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.r2.cloudflarestorage.com https://*.sentry.io https://www.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://va.vercel-scripts.com",
               "base-uri 'self'",
               "form-action 'self'",
               "upgrade-insecure-requests",
-            ].join('; '),
+            ].join("; "),
           },
         ],
       },
@@ -77,4 +80,21 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withSentryConfig(nextConfig, {
+  // Sentry organisation and project — set these in your environment or here directly
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+
+  // Upload source maps to Sentry on every production build so stack traces
+  // show your original TypeScript, not the minified output.
+  // Source maps are deleted from the build output after upload — they never
+  // ship to the browser.
+  silent: true, // Suppress Sentry CLI output during build
+  widenClientFileUpload: true,
+
+  // Automatically tree-shake Sentry debug code in production
+  disableLogger: true,
+
+  // Wrap API route handlers automatically for better error context
+  automaticVercelMonitors: true,
+})
