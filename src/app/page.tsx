@@ -344,13 +344,13 @@ export default async function HomePage() {
             nextPlan ? (
               <>
                 <h2 className="text-4xl font-bold mb-4">
-                  Unlock {PLANS[nextPlan].name}
+                  Unlock {PLANS[nextPlan as keyof typeof PLANS].name}
                 </h2>
                 <p className="text-base mb-6" style={{ color: "var(--text-muted)" }}>
-                  {PLANS[nextPlan].description} · ${PLANS[nextPlan].price}/mo
+                  {PLANS[nextPlan as keyof typeof PLANS].description} · ${PLANS[nextPlan as keyof typeof PLANS].price}/mo
                 </p>
                 <ul className="text-sm mb-8 space-y-2 text-left inline-block">
-                  {PLANS[nextPlan].features.map((feat) => (
+                  {PLANS[nextPlan as keyof typeof PLANS].features.map((feat: string) => (
                     <li key={feat} className="flex items-center gap-2">
                       <span style={{ color: "var(--accent)" }}>✓</span>
                       <span style={{ color: "var(--text-muted)" }}>{feat}</span>
@@ -358,8 +358,8 @@ export default async function HomePage() {
                   ))}
                 </ul>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Link href="/pricing" className="btn-accent inline-block px-8 py-3.5 rounded-xl text-sm">
-                    Upgrade to {PLANS[nextPlan].name} →
+                <Link href="/pricing" className="btn-accent inline-block px-8 py-3.5 rounded-xl text-sm">
+                  Upgrade to {PLANS[nextPlan as keyof typeof PLANS].name} →
                   </Link>
                   <Link href="/dashboard" className="btn-outline inline-block px-8 py-3.5 rounded-xl text-sm">
                     Go to dashboard

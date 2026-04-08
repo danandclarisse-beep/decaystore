@@ -8,7 +8,7 @@ import { LogoMark } from "@/components/shared/LogoMark"
 interface Props {
   /** Passed from server components that already have the user's plan.
    *  null = unknown (client-side Clerk state only, e.g. on non-DB pages). */
-  userPlan?: PlanKey | null
+    userPlan?: PlanKey | "trial_expired" | null
 }
 
 // ── Nav link sets by auth state ──────────────────────────
