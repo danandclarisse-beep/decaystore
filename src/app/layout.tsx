@@ -8,18 +8,35 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "DecayStore — Storage with a memory",
   description:
-    "Files that delete themselves when you stop caring. Intentional storage for intentional people.",
+    "Intentional storage. Files decay when ignored — only what you use survives.",
   metadataBase: new URL("https://decaystore.vercel.app"),
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: "DecayStore — Storage with a memory",
-    description: "Files that delete themselves when you stop caring.",
+    description: "Files decay when ignored. Only what you use survives.",
     type: "website",
     url: "https://decaystore.vercel.app",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "DecayStore — Storage with a memory",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "DecayStore",
     description: "Storage with a memory. Files decay when ignored.",
+    images: ["/og.png"],
   },
   robots: {
     index: true,
@@ -29,7 +46,10 @@ export const metadata: Metadata = {
 
 // themeColor must live in viewport export (Next.js 14+)
 export const viewport: Viewport = {
-  themeColor: "#0a0a0b",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)",  color: "#0a0a0b" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f5f0" },
+  ],
 }
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID

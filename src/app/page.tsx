@@ -1,3 +1,6 @@
+// ROUTE: /
+// FILE:  src/app/page.tsx
+
 import Link from "next/link"
 import { auth } from "@clerk/nextjs/server"
 import { Nav } from "@/components/shared/Nav"
@@ -40,7 +43,7 @@ export default async function HomePage() {
   const { userId: clerkId } = await auth()
   let userData: {
     firstName: string | null
-    plan: PlanKey
+    plan: PlanKey | "trial_expired"
     storageUsedBytes: number
     storageLimit: number
     liveFiles: Array<{ name: string; score: number; label: string; color: string; days: number }>
@@ -52,8 +55,8 @@ export default async function HomePage() {
     try {
       const user = await getUserByClerkId(clerkId)
       if (user) {
-        const plan = (user.plan ?? "free") as PlanKey
-        const storageLimit = PLAN_STORAGE_LIMITS[plan]
+        const plan = (user.plan ?? "free") as PlanKey | "trial_expired"
+        const storageLimit = PLAN_STORAGE_LIMITS[plan as keyof typeof PLAN_STORAGE_LIMITS]
 
         // Fetch top 4 most-decayed confirmed, non-deleted files
         const topFiles = await db
@@ -94,7 +97,6 @@ export default async function HomePage() {
           }
         })
 
-        // Get first name from Clerk (available via publicMetadata or email prefix)
         const { currentUser } = await import("@clerk/nextjs/server")
         const clerkUser = await currentUser()
         const firstName = clerkUser?.firstName ?? null
@@ -121,28 +123,39 @@ export default async function HomePage() {
     : DEMO_FILES.map(f => ({ ...f }))
 
   // ── Upgrade path logic ────────────────────────────────────
-  const nextPlanMap: Record<PlanKey, PlanKey | null> = {
-    free: "starter",
-    starter: "pro",
-    pro: null,
+  // [P19] trial and trial_expired: next upgrade is always pro.
+  // trial_expired exists in PLAN_STORAGE_LIMITS but not in PLANS (no checkout
+  // path for it), so PlanKey doesn't cover it. We widen the map key type
+  // explicitly so TypeScript accepts the trial_expired entry.
+  const nextPlanMap: Record<PlanKey | "trial_expired", PlanKey | null> = {
+    free:          "starter",
+    starter:       "pro",
+    pro:           null,
+    trial:         null,   // already on pro features — TrialBanner handles the CTA
+    trial_expired: null,   // TrialExpiredBanner in dashboard handles this
   }
-  const nextPlan = userData ? nextPlanMap[userData.plan] : null
+  const plan = userData?.plan as PlanKey | "trial_expired" | undefined
+  const nextPlan = plan ? nextPlanMap[plan] : null
+
+  // [P19] Trial and trial_expired users shouldn't see the generic nudge strip
+  const showNudge = userData && nextPlan &&
+    plan !== "trial" && plan !== "trial_expired"
 
   return (
     <div style={{ background: "var(--bg)", minHeight: "100vh" }}>
-      <Nav userPlan={userData?.plan ?? null} />
+      <Nav userPlan={(plan ?? null) as PlanKey | null} />
 
-      {/* ── P11-7: Upgrade nudge strip (signed-in Free/Starter only) ─────── */}
-      {userData && nextPlan && (
-        <NudgeStrip plan={userData.plan} nextPlan={nextPlan} />
+      {/* ── Upgrade nudge strip (signed-in Free/Starter only) ───────────── */}
+      {showNudge && (
+        <NudgeStrip plan={plan as PlanKey} nextPlan={nextPlan!} />
       )}
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       {userData ? (
-        // P11-1: Personalised hero for authenticated users
+        // Personalised hero for authenticated users
         <PersonalisedHero
           firstName={userData.firstName}
-          plan={userData.plan}
+          plan={(plan ?? "free") as PlanKey}
           storageUsedBytes={userData.storageUsedBytes}
           storageLimit={userData.storageLimit}
           totalFiles={userData.totalFiles}
@@ -150,7 +163,7 @@ export default async function HomePage() {
           nextPlan={nextPlan}
         />
       ) : (
-        // Anonymous marketing hero
+        // [P19] Anonymous marketing hero — dual CTA: trial + free
         <section className="relative overflow-hidden">
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none"
@@ -184,19 +197,27 @@ export default async function HomePage() {
               Files you care about, you renew. No hoarding. No clutter.
             </p>
 
+            {/* [P19] Dual CTA — trial is primary, free is secondary */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link href="/auth/sign-up" className="btn-accent px-6 py-3 rounded-xl text-sm">
-                Start for free →
+              <Link href="/auth/sign-up?intent=trial" className="btn-accent px-6 py-3 rounded-xl text-sm">
+                Start free trial — 14 days →
               </Link>
-              <Link href="/pricing" className="btn-outline px-6 py-3 rounded-xl text-sm">
-                See pricing
+              <Link href="/auth/sign-up?intent=free" className="btn-outline px-6 py-3 rounded-xl text-sm">
+                Continue with free plan
               </Link>
             </div>
+
+            {/* Fine print */}
+            <p className="text-xs mt-4" style={{ color: "var(--text-dim)" }}>
+              Trial requires a card · $15/mo after 14 days · cancel any time
+              &nbsp;·&nbsp;
+              Free plan needs no card
+            </p>
           </div>
         </section>
       )}
 
-      {/* ── P11-2: Decay preview (live for signed-in, demo for anonymous) ── */}
+      {/* ── Decay preview (live for signed-in, demo for anonymous) ──────── */}
       <section className="max-w-2xl mx-auto px-6 py-4 mb-16">
         <div
           className="rounded-2xl p-6"
@@ -316,11 +337,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── P11-6: Plan-aware bottom CTA ─────────────────────────────────── */}
+      {/* ── [P19] Plan-aware bottom CTA ──────────────────────────────────── */}
       <section className="py-24" style={{ borderTop: "1px solid var(--border-subtle)" }}>
         <div className="max-w-2xl mx-auto px-6 text-center">
           {userData ? (
-            // Signed-in: show upgrade CTA or pro satisfaction message
             nextPlan ? (
               <>
                 <h2 className="text-4xl font-bold mb-4">
@@ -346,8 +366,19 @@ export default async function HomePage() {
                   </Link>
                 </div>
               </>
+            ) : plan === "trial" ? (
+              // [P19] Trial user — remind them they're on a time limit
+              <>
+                <h2 className="text-4xl font-bold mb-4">Your trial is running.</h2>
+                <p className="text-base mb-8" style={{ color: "var(--text-muted)" }}>
+                  You have full Pro access. After 14 days, your card will be charged $15/mo — or cancel before then.
+                </p>
+                <Link href="/dashboard" className="btn-accent inline-block px-8 py-3.5 rounded-xl text-sm">
+                  Go to dashboard →
+                </Link>
+              </>
             ) : (
-              // Pro user — no upgrade needed
+              // Pro or trial_expired user
               <>
                 <h2 className="text-4xl font-bold mb-4">You're on Pro.</h2>
                 <p className="text-base mb-8" style={{ color: "var(--text-muted)" }}>
@@ -359,20 +390,24 @@ export default async function HomePage() {
               </>
             )
           ) : (
-            // Anonymous visitor
+            // [P19] Anonymous visitor — dual CTA mirrors hero
             <>
               <h2 className="text-4xl font-bold mb-4">Ready to declutter?</h2>
               <p className="text-base mb-8" style={{ color: "var(--text-muted)" }}>
-                Free plan includes 1 GB and 100 files. No credit card required.
+                Start a 14-day Pro trial or jump in free — no hoops, no hidden fees.
               </p>
-              <Link href="/auth/sign-up" className="btn-accent inline-block px-8 py-3.5 rounded-xl text-sm">
-                Start for free — no credit card
-              </Link>
-              <p className="text-xs mt-4" style={{ color: "var(--text-dim)" }}>
-                By signing up you agree to our{" "}
-                <Link href="/legal/terms" className="underline underline-offset-2" style={{ color: "var(--text-muted)" }}>Terms of Service</Link>
-                {" "}and{" "}
-                <Link href="/legal/privacy" className="underline underline-offset-2" style={{ color: "var(--text-muted)" }}>Privacy Policy</Link>.
+              <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+                <Link href="/auth/sign-up?intent=trial" className="btn-accent inline-block px-8 py-3.5 rounded-xl text-sm">
+                  Start free trial — 14 days
+                </Link>
+                <Link href="/auth/sign-up?intent=free" className="btn-outline inline-block px-8 py-3.5 rounded-xl text-sm">
+                  Continue with free plan
+                </Link>
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+                Trial requires a card · $15/mo after 14 days · cancel any time
+                &nbsp;·&nbsp;
+                Free plan needs no card
               </p>
             </>
           )}

@@ -125,8 +125,9 @@ export function NotificationPanel({
         border: "1px solid var(--border)",
         borderRadius: mobileSheet ? "1.25rem 1.25rem 0 0" : "var(--radius-lg)",
         boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)",
-        maxHeight: mobileSheet ? "80vh" : "min(480px, 80vh)",
+        maxHeight: mobileSheet ? "80svh" : "min(480px, calc(100svh - 120px))",
         overflow: "hidden",
+        overflowX: "hidden",
       }}
     >
       {/* Header */}

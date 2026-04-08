@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { BarChart2Icon, RefreshCwIcon, TrendingUpIcon, ZapIcon, XIcon } from "lucide-react"
+import { BarChart2Icon, RefreshCwIcon, TrendingUpIcon, ZapIcon, XIcon, EyeIcon, DownloadIcon, ClockIcon } from "lucide-react"
 import { formatBytes, formatRelativeTime } from "@/lib/utils"
 import { PLAN_STORAGE_LIMITS } from "@/lib/plans"
+import { getDecayColor } from "@/lib/decay-utils"
+import type { File } from "@/lib/db/schema"
 
 interface Snapshot {
   date: string
@@ -35,6 +37,11 @@ interface Props {
   plan: "free" | "starter" | "pro"
   isOpen: boolean
   onClose: () => void
+  /** [P18] All user files — shown as compact list inside the modal */
+  files?:      File[]
+  onRenew?:    (fileId: string) => void
+  onDownload?: (fileId: string, filename: string) => void
+  onPreview?:  (file: File) => void
 }
 
 const DECAY_COLORS: Record<string, string> = {
@@ -49,7 +56,7 @@ const DECAY_LABELS: Record<string, string> = {
   fresh: "Fresh", aging: "Aging", stale: "Stale", critical: "Critical", expiring: "Expiring",
 }
 
-export function AnalyticsPanel({ plan, isOpen, onClose }: Props) {
+export function AnalyticsPanel({ plan, isOpen, onClose, files = [], onRenew, onDownload, onPreview }: Props) {
   const [data, setData]       = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
@@ -255,7 +262,20 @@ export function AnalyticsPanel({ plan, isOpen, onClose }: Props) {
               <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
                 <TrendingUpIcon className="w-3 h-3 inline mr-1" />30-day trend
               </p>
-              <StorageTrendChart snapshots={data.snapshots} currentBytes={data.currentStorageBytes} />
+              {data.snapshots.length === 0 ? (
+                <div
+                  className="flex flex-col items-center justify-center gap-2 py-6 rounded-lg text-center"
+                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                >
+                  <TrendingUpIcon className="w-5 h-5" style={{ color: "var(--text-dim)" }} />
+                  <p className="text-xs font-medium" style={{ color: "var(--text)" }}>No snapshot data yet</p>
+                  <p className="text-xs max-w-[220px]" style={{ color: "var(--text-muted)" }}>
+                    Snapshot data builds up over time. Check back after the next daily cron run at 03:00 UTC.
+                  </p>
+                </div>
+              ) : (
+                <StorageTrendChart snapshots={data.snapshots} currentBytes={data.currentStorageBytes} />
+              )}
             </section>
 
             {/* Decay distribution */}
@@ -273,32 +293,55 @@ export function AnalyticsPanel({ plan, isOpen, onClose }: Props) {
                   <ZapIcon className="w-3 h-3 inline mr-1" />Most recently renewed
                 </p>
                 <div className="space-y-1.5">
-                  {data.topRenewed.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg"
-                      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{f.originalFilename}</p>
-                        <p className="text-xs" style={{ color: "var(--text-dim)" }}>
-                          {formatRelativeTime(f.lastAccessedAt)} · {formatBytes(f.sizeBytes)}
-                        </p>
-                      </div>
+                  {data.topRenewed.map((f) => {
+                    const fullFile = files.find((file) => file.id === f.id)
+                    return (
                       <div
-                        className="text-xs font-semibold shrink-0"
-                        style={{
-                          fontFamily: "DM Mono, monospace",
-                          color: f.decayScore < 0.25 ? "var(--decay-fresh)"
-                               : f.decayScore < 0.5  ? "var(--decay-aging)"
-                               : f.decayScore < 0.75 ? "var(--decay-stale)"
-                               : "var(--decay-critical)",
-                        }}
+                        key={f.id}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-lg group/row"
+                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
                       >
-                        {(f.decayScore * 100).toFixed(0)}%
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{f.originalFilename}</p>
+                          <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+                            {formatRelativeTime(f.lastAccessedAt)} · {formatBytes(f.sizeBytes)}
+                          </p>
+                        </div>
+                        {/* Quick actions — visible on hover */}
+                        {fullFile && (
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0">
+                            {onPreview && (
+                              <button onClick={() => onPreview(fullFile)} className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-hover)]" style={{ color: "var(--text-dim)" }} title="Preview">
+                                <EyeIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {onDownload && (
+                              <button onClick={() => onDownload(fullFile.id, fullFile.originalFilename)} className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-hover)]" style={{ color: "var(--text-dim)" }} title="Download">
+                                <DownloadIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {onRenew && (
+                              <button onClick={() => onRenew(fullFile.id)} className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-hover)]" style={{ color: "#34d399" }} title="Renew">
+                                <RefreshCwIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <div
+                          className="text-xs font-semibold shrink-0"
+                          style={{
+                            fontFamily: "DM Mono, monospace",
+                            color: f.decayScore < 0.25 ? "var(--decay-fresh)"
+                                 : f.decayScore < 0.5  ? "var(--decay-aging)"
+                                 : f.decayScore < 0.75 ? "var(--decay-stale)"
+                                 : "var(--decay-critical)",
+                          }}
+                        >
+                          {(f.decayScore * 100).toFixed(0)}%
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </section>
             )}
@@ -310,23 +353,9 @@ export function AnalyticsPanel({ plan, isOpen, onClose }: Props) {
 
   return (
     <>
-      {/* Desktop: inline panel */}
-      <div className="hidden lg:flex flex-col h-full w-[360px] shrink-0">
+      {/* [P18] Rendered as flat content inside a modal — no internal fixed positioning */}
+      <div className="flex flex-col" style={{ minHeight: 0, flex: 1 }}>
         {panelContent}
-      </div>
-
-      {/* Mobile: right drawer */}
-      <div className="lg:hidden">
-        <div
-          className="fixed inset-0 z-[125] bg-black/40 backdrop-blur-sm"
-          onClick={onClose}
-        />
-        <div
-          className="fixed top-0 right-0 bottom-0 z-[130] w-[min(360px,90vw)] flex flex-col animate-slide-down"
-          style={{ background: "var(--bg-card)", borderLeft: "1px solid var(--border)" }}
-        >
-          {panelContent}
-        </div>
       </div>
     </>
   )

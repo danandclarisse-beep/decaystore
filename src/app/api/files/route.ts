@@ -103,6 +103,15 @@ export async function POST(request: Request) {
 
     const user = await getOrCreateUser()
 
+    // [P18] Block uploads for expired trial users before any other check.
+    // Returns 507 to match the storage-full status used elsewhere.
+    if (user.plan === "trial_expired") {
+      return NextResponse.json(
+        { error: "Your trial has ended. Subscribe to continue uploading." },
+        { status: 507 }
+      )
+    }
+
     // [S6] Validate with Zod instead of manual if-checks
     const parsed = uploadSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -145,7 +154,7 @@ export async function POST(request: Request) {
     }
 
     // Check storage limit — [P12-3] use 507 Insufficient Storage (correct HTTP status)
-    const storageLimit = PLAN_STORAGE_LIMITS[user.plan]
+    const storageLimit = PLAN_STORAGE_LIMITS[user.plan as keyof typeof PLAN_STORAGE_LIMITS]
     if (user.storageUsedBytes + sizeBytes > storageLimit) {
       return NextResponse.json(
         { error: "Storage full — upgrade your plan or delete files to make room." },
@@ -154,7 +163,7 @@ export async function POST(request: Request) {
     }
 
     // [P3-2] Check file count limit using COUNT(*) instead of loading all rows
-    const plan = PLANS[user.plan]
+    const plan = PLANS[user.plan as keyof typeof PLANS]
     const [{ fileCount }] = await db
       .select({ fileCount: count() })
       .from(files)

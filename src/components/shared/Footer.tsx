@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { LogoMark } from "@/components/shared/LogoMark"
 
 export function Footer() {
   const year = new Date().getFullYear()
@@ -11,18 +12,13 @@ export function Footer() {
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5 mb-3">
-              <span
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-                style={{ background: "var(--accent)", color: "#000" }}
-              >
-                D
-              </span>
+              <LogoMark size={28} />
               <span className="font-bold text-base" style={{ fontFamily: "Syne, sans-serif" }}>
                 DecayStore
               </span>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              Storage with a memory. Files that forget themselves when you stop caring.
+              Storage with a memory. Files that don&rsquo;t get used don&rsquo;t get kept.
             </p>
           </div>
 

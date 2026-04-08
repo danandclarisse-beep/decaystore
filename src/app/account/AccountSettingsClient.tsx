@@ -1,11 +1,13 @@
-"use client"
+// ROUTE: rendered inside /account
+// FILE:  src/app/account/AccountSettingsClient.tsx
 
+"use client"
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import { useClerk } from "@clerk/nextjs"
 import {
   UserIcon, BellIcon, CreditCardIcon, AlertTriangleIcon,
   ZapIcon, ShieldAlertIcon, CheckIcon, ExternalLinkIcon,
+  ClockIcon,
 } from "lucide-react"
 import type { User } from "@/lib/db/schema"
 import { PLANS } from "@/lib/plans"
@@ -14,14 +16,17 @@ interface Props {
   user: User
 }
 
+// [FIX] Added "trial" and "trial_expired" entries so the plan badge renders
+// with proper amber Pro styling instead of falling back to the free (grey) style.
 const PLAN_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  free:    { label: "Free",    color: "var(--text-muted)", bg: "rgba(255,255,255,0.06)" },
-  starter: { label: "Starter", color: "#60a5fa",          bg: "rgba(59,130,246,0.12)"  },
-  pro:     { label: "Pro",     color: "var(--accent)",    bg: "rgba(245,166,35,0.12)"  },
+  free:          { label: "Free",              color: "var(--text-muted)", bg: "rgba(255,255,255,0.06)" },
+  starter:       { label: "Starter",           color: "#60a5fa",          bg: "rgba(59,130,246,0.12)"  },
+  pro:           { label: "Pro",               color: "var(--accent)",    bg: "rgba(245,166,35,0.12)"  },
+  trial:         { label: "Pro Trial",         color: "var(--accent)",    bg: "rgba(245,166,35,0.12)"  },
+  trial_expired: { label: "Pro Trial (ended)", color: "var(--text-muted)", bg: "rgba(255,255,255,0.06)" },
 }
 
 export function AccountSettingsClient({ user }: Props) {
-  const router = useRouter()
   const { signOut } = useClerk()
 
   // ── Notification prefs state ────────────────────────────
@@ -43,7 +48,12 @@ export function AccountSettingsClient({ user }: Props) {
   const [isPending,         startTransition]      = useTransition()
 
   const planBadge = PLAN_LABELS[user.plan] ?? PLAN_LABELS.free
-  const nextPlan  = user.plan === "free" ? "starter" : user.plan === "starter" ? "pro" : null
+
+  // [FIX] trial and trial_expired users should NOT see an "Upgrade" link —
+  // they already have a subscription. Only free/starter get the upgrade nudge.
+  const nextPlan = user.plan === "free"    ? "starter"
+                 : user.plan === "starter" ? "pro"
+                 : null
 
   // ── Handlers ───────────────────────────────────────────
 
@@ -95,23 +105,27 @@ export function AccountSettingsClient({ user }: Props) {
     }
   }
 
-  function handleDeleteAccount() {
-    if (deleteConfirmText !== "DELETE") return
-    startTransition(async () => {
-      setDeleteError(null)
-      try {
-        const res = await fetch("/api/account", { method: "DELETE" })
-        if (!res.ok) {
-          const d = await res.json()
-          throw new Error(d.error ?? "Failed to delete account")
-        }
-        await signOut()
-        router.push("/")
-      } catch (err) {
-        setDeleteError(err instanceof Error ? err.message : "Failed to delete account")
+function handleDeleteAccount() {
+  if (deleteConfirmText !== "DELETE") return
+  startTransition(async () => {
+    setDeleteError(null)
+    try {
+      const res = await fetch("/api/account", { method: "DELETE" })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error ?? "Failed to delete account")
       }
-    })
-  }
+      // Hard-navigate to /signed-out — that page calls useClerk().signOut() which
+      // purges all in-memory SDK state and __client_uat cookies, then redirects to /.
+      // We do NOT call signOut() here because the Clerk session is already revoked
+      // server-side (the API deleted the Clerk user); calling it with a dead session
+      // causes a 401 flood. Instead we let /signed-out handle it cleanly via the SDK.
+      window.location.href = "/signed-out"
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete account")
+    }
+  })
+}
 
   // ── Shared toggle component ─────────────────────────────
   function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -168,6 +182,10 @@ export function AccountSettingsClient({ user }: Props) {
 
   const email = user.email ?? ""
 
+  // [FIX] Notifications: trial users have an active subscription — show full
+  // notification toggles, not the "Starter+" lock row.
+  const hasActiveSubscription = ["starter", "pro", "trial"].includes(user.plan)
+
   return (
     <div>
       {/* Profile */}
@@ -177,12 +195,14 @@ export function AccountSettingsClient({ user }: Props) {
         </Row>
         <Row label="Plan">
           <div className="flex items-center gap-2">
+            {/* [FIX] planBadge now covers "trial" with amber Pro styling */}
             <span
-              className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize"
+              className="text-xs font-semibold px-2.5 py-1 rounded-full"
               style={{ background: planBadge.bg, color: planBadge.color, fontFamily: "DM Mono, monospace" }}
             >
-              {user.plan}
+              {planBadge.label}
             </span>
+            {/* [FIX] trial users already have a subscription — no Upgrade link */}
             {nextPlan && (
               <a
                 href="/pricing"
@@ -194,6 +214,22 @@ export function AccountSettingsClient({ user }: Props) {
             )}
           </div>
         </Row>
+
+        {/* [FIX] Show trial end date when the user is on a trial */}
+        {user.plan === "trial" && user.trialEndsAt && (
+          <Row
+            label="Trial ends"
+            hint="We'll email you 3 days before billing begins."
+          >
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--accent)", fontFamily: "DM Mono, monospace" }}>
+              <ClockIcon className="w-3.5 h-3.5" />
+              {new Date(user.trialEndsAt).toLocaleDateString(undefined, {
+                year: "numeric", month: "short", day: "numeric",
+              })}
+            </div>
+          </Row>
+        )}
+
         <div className="pt-3">
           <a
             href="https://accounts.clerk.dev/user"
@@ -210,8 +246,9 @@ export function AccountSettingsClient({ user }: Props) {
 
       {/* Notifications */}
       <Card title="Notifications" icon={<BellIcon className="w-4 h-4" />}>
-        {/* Weekly digest — Starter + Pro only */}
-        {user.plan !== "free" ? (
+        {/* Weekly digest — Starter, Pro, and Trial */}
+        {/* [FIX] trial counts as an active subscription for notification access */}
+        {hasActiveSubscription ? (
           <Row
             label="Weekly decay digest"
             hint="Email summary of files approaching deletion, sent every Monday."
@@ -258,10 +295,21 @@ export function AccountSettingsClient({ user }: Props) {
       <Card title="Billing" icon={<CreditCardIcon className="w-4 h-4" />}>
         <Row label="Current plan">
           <span
-            className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize"
+            className="text-xs font-semibold px-2.5 py-1 rounded-full"
             style={{ background: planBadge.bg, color: planBadge.color, fontFamily: "DM Mono, monospace" }}
           >
-            {PLANS[user.plan].name} — {user.plan === "free" ? "Free" : `$${PLANS[user.plan].price}/mo`}
+            {(() => {
+              // trial_expired is not in PLANS — display as Pro (expired) since it has Pro features
+              const displayPlan = user.plan === "trial_expired" ? "pro" : user.plan as keyof typeof PLANS
+              const isFree = user.plan === "free"
+              const label  = user.plan === "trial"         ? "Pro Trial"
+                           : user.plan === "trial_expired" ? "Pro Trial (ended)"
+                           : PLANS[displayPlan].name
+              const price  = isFree         ? "Free"
+                           : user.plan === "trial" ? "Free for 14 days"
+                           : `$${PLANS[displayPlan].price}/mo`
+              return `${label} — ${price}`
+            })()}
           </span>
         </Row>
         {portalError && (
@@ -327,6 +375,7 @@ export function AccountSettingsClient({ user }: Props) {
               type="text"
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} // ✅ block form submit on Enter
               placeholder="Type DELETE to confirm"
               className="w-full text-sm px-3 py-2 rounded-xl mb-3 outline-none"
               style={{

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import { NextResponse } from "next/server"
 import { auth, clerkClient } from "@clerk/nextjs/server"
+import { cookies } from "next/headers"
 import { db } from "@/lib/db"
 import { users, files, fileVersions } from "@/lib/db/schema"
 import { eq, ne, and } from "drizzle-orm"
@@ -58,47 +59,63 @@ export async function PATCH(req: Request) {
   }
 }
 
-// ─── DELETE /api/account — delete account and all data ────────────────────────
 export async function DELETE() {
   try {
-    const { userId: clerkId } = await auth()
+    const { userId: clerkId, sessionId } = await auth()
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+    const cookieStore = await cookies()
     const user = await getOrCreateUser()
 
-    // 1. Collect all R2 keys to delete (file records + version records)
-    const userFiles = await db.query.files.findMany({
-      where: and(
-        eq(files.userId, user.id),
-        ne(files.status, "deleted"),
-      ),
-    })
+    // ── Step 1: Invalidate Clerk session + delete Clerk user FIRST ───────────
+    // Deleting the Clerk user before the DB row ensures the JWT is immediately
+    // rejected by Clerk's servers. If we delete DB first, there's a window where
+    // the Clerk session is still valid and the middleware re-authenticates the
+    // user, finding no DB row and silently re-creating the session.
+    const clerk = await clerkClient()
+    try {
+      if (sessionId) await clerk.sessions.revokeSession(sessionId)
+    } catch (err) {
+      console.error("[DELETE /api/account] Session revocation failed:", err)
+    }
+    try {
+      await clerk.users.deleteUser(clerkId)
+    } catch (err) {
+      console.error("[DELETE /api/account] Clerk user deletion failed:", err)
+    }
 
+    // ── Step 2: R2 + DB cleanup (fire-and-forget safe — Clerk is already gone) ─
+    const userFiles = await db.query.files.findMany({
+      where: and(eq(files.userId, user.id), ne(files.status, "deleted")),
+    })
     const allVersions = await db.query.fileVersions.findMany({
       where: eq(fileVersions.userId, user.id),
     })
-
-    // 2. Delete from R2 (best-effort — don't fail account deletion on R2 errors)
     const r2Keys = new Set<string>()
-    for (const f of userFiles)    r2Keys.add(f.r2Key)
-    for (const v of allVersions)  r2Keys.add(v.r2Key)
-
+    for (const f of userFiles)   r2Keys.add(f.r2Key)
+    for (const v of allVersions) r2Keys.add(v.r2Key)
     await Promise.allSettled(Array.from(r2Keys).map((key) => deleteFromR2(key)))
-
-    // 3. Delete DB rows — cascades handle children (files, versions, events, keys, snapshots)
     await db.delete(users).where(eq(users.id, user.id))
 
-    // 4. [P13-2] Delete the Clerk identity so the user cannot sign back in and
-    //    silently resurrect their account via getOrCreateUser. Wrapped in its own
-    //    try/catch: if Clerk fails, the DB record is already gone — we log the
-    //    error for manual follow-up but still return success to the client.
-    try {
-      await (await clerkClient()).users.deleteUser(clerkId)
-    } catch (clerkErr) {
-      console.error("[DELETE /api/account] Clerk user deletion failed — manual cleanup required:", clerkErr)
+    // ── Step 3: Expire all Clerk cookies on the response ─────────────────────
+    // Belt-and-suspenders: even though the Clerk user is gone, clearing cookies
+    // prevents the browser from sending stale tokens on the next request.
+    const response = NextResponse.json({ ok: true })
+    const allCookies = cookieStore.getAll()
+    const clerkCookiePatterns = [
+      "__session", "__client_uat", "__refresh",
+      "__clerk_db_jwt", "clerk_active_context",
+    ]
+    for (const cookie of allCookies) {
+      const isClerkCookie = clerkCookiePatterns.some(pattern =>
+        cookie.name === pattern || cookie.name.startsWith(`${pattern}_`)
+      )
+      if (isClerkCookie) {
+        response.cookies.set(cookie.name, "", { maxAge: 0, path: "/" })
+      }
     }
 
-    return NextResponse.json({ ok: true })
+    return response
   } catch (err) {
     console.error("[DELETE /api/account]", err)
     return NextResponse.json({ error: "Failed to delete account" }, { status: 500 })

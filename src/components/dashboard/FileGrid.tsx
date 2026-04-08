@@ -56,15 +56,24 @@ interface Props {
   onRenewedToast?: (filename: string) => void
   /** Ref so parent (dashboard page) can call handleRenew for notification actions */
   renewFileRef?: React.MutableRefObject<((fileId: string) => Promise<void>) | null>
+  /** [P18] Ref so parent can trigger preview from outside (e.g. from Activity/Analytics modals) */
+  previewFileRef?: React.MutableRefObject<((file: File) => void) | null>
+  /** [P18] Ref so parent can trigger download from outside */
+  downloadFileRef?: React.MutableRefObject<((fileId: string, filename: string) => void) | null>
   /** [P12-4] Ref so parent can focus search input via keyboard shortcut (/) */
   searchInputRef?: React.MutableRefObject<HTMLInputElement | null>
+  /** [P15-2] Called to open the uploader from the empty state CTA */
+  onTriggerUpload?: () => void
+  /** [P18] Grid, list, or preview (content-preview) view mode */
+  viewMode?: "grid" | "list" | "preview"
 }
 
 type ActionKey = string
 
 export function FileGrid({
   files, folders, allFolders, currentFolderId, userPlan,
-  onRefresh, onOpenFolder, onRenewedToast, renewFileRef, searchInputRef,
+  onRefresh, onOpenFolder, onRenewedToast, renewFileRef, previewFileRef, downloadFileRef, searchInputRef, onTriggerUpload,
+  viewMode = "grid",
 }: Props) {
   const [localFiles, setLocalFiles]             = useState<File[]>(files)
   useEffect(() => { setLocalFiles(files) }, [files])
@@ -82,11 +91,18 @@ export function FileGrid({
   const [previewFile, setPreviewFile]           = useState<File | null>(null)
   const [previewUrl, setPreviewUrl]             = useState<string | null>(null)
   const [previewLoading, setPreviewLoading]     = useState(false)
+  const [imgZoom, setImgZoom]                   = useState(1)
+  const imgZoomRef                              = useRef(1)
   const [openMenuId, setOpenMenuId]             = useState<string | null>(null)
   const [confirmState, setConfirmState]         = useState<{ id: string; action: "delete" | "deleteVersion"; versionId?: string } | null>(null)
   const [renewedId, setRenewedId]               = useState<string | null>(null)
   const [detailsFile, setDetailsFile]           = useState<File | null>(null)
   const renameFreshRef = useRef(false)
+
+  // ── [P15-4] Undo-delete state ──────────────────────────────
+  // key: fileId, value: { filename, countdown, timerId }
+  const [undoToasts, setUndoToasts] = useState<Map<string, { filename: string; countdown: number }>>(new Map())
+  const undoTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
 
   // ── [P7-1] Search / sort / filter state ───────────────────
   const [searchQuery, setSearchQuery]     = useState("")
@@ -175,10 +191,12 @@ export function FileGrid({
 
   async function handlePreview(file: File) {
     setPreviewFile(file); setPreviewUrl(null); setPreviewLoading(true)
+    setImgZoom(1); imgZoomRef.current = 1
     try {
-      const res  = await fetch(`/api/files/${file.id}`)
+      // [P15-3] Use /preview-url — 60-second presigned GET URL that does NOT reset the decay clock
+      const res  = await fetch(`/api/files/${file.id}/preview-url`)
       const data = await res.json()
-      if (data.downloadUrl) setPreviewUrl(data.downloadUrl)
+      if (data.previewUrl) setPreviewUrl(data.previewUrl)
     } finally { setPreviewLoading(false) }
   }
 
@@ -207,15 +225,60 @@ export function FileGrid({
     }
   }
 
-  // Expose handleRenew to parent via ref (for notification actions)
+  // Expose handleRenew, handlePreview, handleDownload to parent via refs
   useEffect(() => {
-    if (renewFileRef) renewFileRef.current = handleRenew
+    if (renewFileRef)   renewFileRef.current   = handleRenew
+    if (previewFileRef) previewFileRef.current  = handlePreview
+    if (downloadFileRef) downloadFileRef.current = handleDownload
   })
 
-  async function handleDelete(fileId: string) {
-    const key = fileId + "-delete"; startLoading(key); setConfirmState(null)
-    try { await fetch(`/api/files/${fileId}`, { method: "DELETE" }); onRefresh() }
-    finally { stopLoading(key) }
+  // [P15-4] Soft-delete with 5-second undo window.
+  // File is removed from UI immediately; a countdown toast lets the user undo.
+  // If not undone, the DELETE API call fires after 5 seconds.
+  function handleDelete(fileId: string) {
+    setConfirmState(null)
+    const file = localFiles.find((f) => f.id === fileId)
+    if (!file) return
+
+    // Optimistically hide from grid
+    setLocalFiles((prev) => prev.filter((f) => f.id !== fileId))
+
+    // Clear any existing timer for this file
+    const existing = undoTimersRef.current.get(fileId)
+    if (existing) clearInterval(existing)
+
+    // Show undo toast starting at 5
+    setUndoToasts((prev) => new Map(prev).set(fileId, { filename: file.originalFilename, countdown: 5 }))
+
+    const interval = setInterval(() => {
+      setUndoToasts((prev) => {
+        const entry = prev.get(fileId)
+        if (!entry) return prev
+        const next = entry.countdown - 1
+        if (next <= 0) {
+          fetch(`/api/files/${fileId}`, { method: "DELETE" }).then(() => onRefresh())
+          const updated = new Map(prev)
+          updated.delete(fileId)
+          clearInterval(undoTimersRef.current.get(fileId)!)
+          undoTimersRef.current.delete(fileId)
+          return updated
+        }
+        return new Map(prev).set(fileId, { ...entry, countdown: next })
+      })
+    }, 1000)
+
+    undoTimersRef.current.set(fileId, interval)
+  }
+
+  function handleUndoDelete(fileId: string) {
+    const timer = undoTimersRef.current.get(fileId)
+    if (timer) { clearInterval(timer); undoTimersRef.current.delete(fileId) }
+    setLocalFiles((prev) => {
+      const original = files.find((f) => f.id === fileId)
+      if (!original || prev.find((f) => f.id === fileId)) return prev
+      return [...prev, original]
+    })
+    setUndoToasts((prev) => { const m = new Map(prev); m.delete(fileId); return m })
   }
 
   async function openVersions(file: File) {
@@ -432,10 +495,19 @@ export function FileGrid({
           </p>
           <p className="text-sm max-w-xs mx-auto" style={{ color: "var(--text-muted)" }}>
             {currentFolderId
-              ? "Upload files here or move existing files into this folder using the ⋯ menu."
-              : "Drop files in the upload zone above, or tap it to browse. Files decay if untouched — keep them alive by downloading or renewing."}
+              ? "Drop files here or use the upload button above."
+              : "Upload your first file to get started. Files decay when ignored — only what you use survives."}
           </p>
         </div>
+        {onTriggerUpload && (
+          <button
+            onClick={onTriggerUpload}
+            className="text-sm px-4 py-2 rounded-lg font-medium transition-opacity hover:opacity-90"
+            style={{ background: "var(--accent)", color: "#000" }}
+          >
+            Upload a file
+          </button>
+        )}
         {!currentFolderId && (
           <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: "var(--text-dim)" }}>
             <span className="flex items-center gap-1.5">
@@ -563,7 +635,13 @@ export function FileGrid({
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      <div className={
+        viewMode === "list"
+          ? "flex flex-col gap-1"
+          : viewMode === "preview"
+          ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3"
+          : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4"
+      }>
         {/* Folder cards */}
         {folders.map((folder) => (
           <button
@@ -572,27 +650,50 @@ export function FileGrid({
             onDragOver={(e) => onFolderDragOver(e, folder.id)}
             onDragLeave={onFolderDragLeave}
             onDrop={(e) => onFolderDrop(e, folder.id)}
-            className="rounded-xl p-4 sm:p-5 text-left transition-all group"
+            className={`text-left transition-all group ${
+              viewMode === "list"
+                ? "rounded-lg px-3 py-2"
+                : viewMode === "preview"
+                ? "rounded-xl overflow-hidden"
+                : "rounded-xl p-4 sm:p-5"
+            }`}
             style={{
               background: dropTargetId === folder.id ? "var(--accent-dim)" : "var(--bg-card)",
               border: `1px solid ${dropTargetId === folder.id ? "var(--accent)" : "var(--border)"}`,
-              transform: dropTargetId === folder.id ? "scale(1.02)" : "scale(1)",
+              transform: dropTargetId === folder.id ? "scale(1.01)" : "scale(1)",
               transition: "background 0.15s, border-color 0.15s, transform 0.15s",
             }}
           >
-            <div className="flex items-center gap-3">
-              <FolderIcon className="w-7 h-7 sm:w-8 sm:h-8 shrink-0" style={{ color: "var(--accent)" }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{folder.name}</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                  Folder · {formatRelativeTime(folder.createdAt)}
-                </p>
+            {viewMode === "preview" ? (
+              /* Preview mode: folder as tile with icon area */
+              <div>
+                <div
+                  className="flex items-center justify-center"
+                  style={{ height: 96, background: "var(--bg-elevated)" }}
+                >
+                  <FolderIcon className="w-10 h-10" style={{ color: "var(--accent)", opacity: 0.7 }} />
+                </div>
+                <div className="px-2 py-1.5">
+                  <p className="text-xs font-medium truncate">{folder.name}</p>
+                </div>
               </div>
-              <ChevronDownIcon
-                className="w-4 h-4 -rotate-90 shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ color: "var(--text-dim)" }}
-              />
-            </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <FolderIcon className={`shrink-0 ${viewMode === "list" ? "w-4 h-4" : "w-7 h-7 sm:w-8 sm:h-8"}`} style={{ color: "var(--accent)" }} />
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium truncate ${viewMode === "list" ? "text-xs" : "text-sm"}`}>{folder.name}</p>
+                  {viewMode !== "list" && (
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      Folder · {formatRelativeTime(folder.createdAt)}
+                    </p>
+                  )}
+                </div>
+                <ChevronDownIcon
+                  className={`-rotate-90 shrink-0 transition-transform group-hover:translate-x-0.5 ${viewMode === "list" ? "w-3 h-3" : "w-4 h-4"}`}
+                  style={{ color: "var(--text-dim)" }}
+                />
+              </div>
+            )}
           </button>
         ))}
 
@@ -618,20 +719,169 @@ export function FileGrid({
               draggable
               onDragStart={(e) => onFileDragStart(e, file.id)}
               onDragEnd={onFileDragEnd}
-              className="rounded-xl p-4 sm:p-5 flex flex-col gap-3 transition-all group/card relative"
+              className={`transition-all group/card relative ${
+                viewMode === "list"
+                  ? "rounded-lg px-3 py-2 flex items-center gap-3"
+                  : viewMode === "preview"
+                  ? "rounded-xl overflow-hidden flex flex-col"
+                  : "rounded-xl p-4 sm:p-5 flex flex-col gap-3"
+              }`}
               style={{
                 background: "var(--bg-card)",
                 border: `1px solid ${isSelected ? "var(--accent)" : isExpiring ? "rgba(239,68,68,0.3)" : isCritical ? "rgba(249,115,22,0.2)" : "var(--border)"}`,
                 boxShadow: isSelected ? "0 0 0 2px var(--accent-dim)" : isExpiring ? "0 0 20px rgba(239,68,68,0.05)" : "none",
                 opacity: dragFileId === file.id ? 0.4 : isDeleting ? 0.5 : 1,
-                cursor: "grab",
+                cursor: viewMode === "preview" ? "default" : "grab",
                 transition: "opacity 0.15s",
               }}
             >
+              {/* ═══ PREVIEW MODE CARD ═══ */}
+              {viewMode === "preview" ? (
+                <>
+                  {/* Thumbnail area */}
+                  <div
+                    className="relative overflow-hidden"
+                    style={{ height: 140, background: "var(--bg-elevated)", cursor: "pointer" }}
+                    onClick={() => handlePreview(file)}
+                  >
+                    <PreviewThumb file={file} />
+                    {/* Decay tint overlay on critical files */}
+                    {isCritical && !isRenewed && (
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ background: `${decayColor}18` }}
+                      />
+                    )}
+                    {/* Hover overlay with quick actions */}
+                    <div
+                      className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)" }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePreview(file) }}
+                        className="p-2 rounded-xl transition-colors"
+                        style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
+                        title="Preview"
+                      >
+                        <EyeIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDownload(file.id, file.originalFilename) }}
+                        disabled={isDownloading}
+                        className="p-2 rounded-xl transition-colors disabled:opacity-50"
+                        style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
+                        title="Download"
+                      >
+                        <DownloadIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRenew(file.id) }}
+                        disabled={isRenewing || isRenewed}
+                        className="p-2 rounded-xl transition-colors disabled:opacity-50"
+                        style={{ background: "rgba(52,211,153,0.3)", color: "#34d399" }}
+                        title="Renew"
+                      >
+                        {isRenewed ? <CheckIcon className="w-4 h-4" /> : <RefreshCwIcon className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {/* Select checkbox */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleSelect(file.id) }}
+                      className={`absolute top-2 left-2 z-10 rounded-md transition-opacity ${selectedIds.size > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+                      title={isSelected ? "Deselect" : "Select"}
+                      aria-label={isSelected ? `Deselect ${file.originalFilename}` : `Select ${file.originalFilename}`}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected
+                        ? <CheckSquareIcon className="w-4 h-4 drop-shadow" style={{ color: "var(--accent)" }} />
+                        : <SquareIcon className="w-4 h-4 drop-shadow" style={{ color: "rgba(255,255,255,0.8)" }} />
+                      }
+                    </button>
+                    {/* More actions */}
+                    <div className="absolute top-2 right-2 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === file.id ? null : file.id) }}
+                        className="p-1.5 rounded-lg"
+                        style={{ background: "rgba(0,0,0,0.5)", color: "#fff" }}
+                        title="More actions"
+                      >
+                        <MoreHorizontalIcon className="w-3.5 h-3.5" />
+                      </button>
+                      {openMenuId === file.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                          <div
+                            className="absolute right-0 top-full mt-1 z-20 rounded-xl overflow-hidden py-1 min-w-[160px]"
+                            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+                          >
+                            <button onClick={() => { startRename(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                              <PencilIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Rename
+                            </button>
+                            <button onClick={() => { setMovingFile(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                              <FolderInputIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Move to folder
+                            </button>
+                            <button onClick={() => { openVersions(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                              <GitBranchIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Versions (v{file.currentVersionNumber})
+                            </button>
+                            <button onClick={() => { setDetailsFile(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                              <InfoIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Details
+                            </button>
+                            <div style={{ height: "1px", background: "var(--border-subtle)", margin: "4px 0" }} />
+                            <button onClick={() => { setConfirmState({ id: file.id, action: "delete" }); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors" style={{ color: "#ef4444" }}>
+                              <Trash2Icon className="w-3.5 h-3.5 shrink-0" /> Delete permanently
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {/* Decay indicator strip at bottom of thumb */}
+                    <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "var(--bg-elevated)" }}>
+                      <div
+                        className={`h-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
+                        style={{ width: isRenewed ? "0%" : `${liveDecayScore * 100}%`, background: isRenewed ? "#34d399" : decayColor }}
+                      />
+                    </div>
+                  </div>
+                  {/* Caption bar */}
+                  <div className="px-2.5 py-2 flex items-center gap-2 min-w-0">
+                    <span className="text-sm leading-none shrink-0">{getMimeTypeIcon(file.mimeType)}</span>
+                    <div className="flex-1 min-w-0">
+                      {isRenaming ? (
+                        <input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRename(file.id)
+                            if (e.key === "Escape") { setRenamingId(null); setRenameError(null) }
+                          }}
+                          onFocus={() => { renameFreshRef.current = false }}
+                          onBlur={() => { if (renameFreshRef.current) { renameFreshRef.current = false; return } handleRename(file.id) }}
+                          className="w-full text-xs rounded px-1.5 py-0.5 outline-none"
+                          style={{ background: "var(--bg-hover)", border: `1px solid ${renameError ? "#ef4444" : "var(--accent)"}`, color: "var(--text)" }}
+                        />
+                      ) : (
+                        <p
+                          className="text-xs font-medium truncate cursor-pointer"
+                          title={file.originalFilename}
+                          onDoubleClick={() => startRename(file)}
+                        >
+                          {file.originalFilename}
+                        </p>
+                      )}
+                      <p className="text-xs truncate" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace", fontSize: "10px" }}>
+                        {formatBytes(file.sizeBytes)} · <span style={{ color: isRenewed ? "#34d399" : decayColor }}>{isRenewed ? "Renewed!" : timeLeft + " left"}</span>
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+              /* ═══ GRID / LIST MODE CARD (original) ═══ */
+              <>
               {/* [P7-2] Checkbox — shows on hover or when anything is selected */}
               <button
                 onClick={() => toggleSelect(file.id)}
-                className={`absolute top-3 left-3 z-10 rounded-md transition-opacity ${selectedIds.size > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+                className={`${viewMode === "list" ? "shrink-0" : "absolute top-3 left-3 z-10"} rounded-md transition-opacity ${selectedIds.size > 0 || isSelected ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
                 title={isSelected ? "Deselect" : "Select"}
                 aria-label={isSelected ? `Deselect ${file.originalFilename}` : `Select ${file.originalFilename}`}
                 aria-pressed={isSelected}
@@ -642,8 +892,8 @@ export function FileGrid({
                 }
               </button>
               {/* File info row */}
-              <div className="flex items-start gap-3">
-                <span className="text-xl sm:text-2xl leading-none mt-0.5 shrink-0">
+              <div className={`flex items-${viewMode === "list" ? "center" : "start"} gap-3 ${viewMode === "list" ? "flex-1 min-w-0" : ""}`}>
+                <span className={`leading-none shrink-0 ${viewMode === "list" ? "text-base mt-0" : "text-xl sm:text-2xl mt-0.5"}`}>
                   {getMimeTypeIcon(file.mimeType)}
                 </span>
                 <div className="flex-1 min-w-0">
@@ -693,7 +943,8 @@ export function FileGrid({
                 </div>
               </div>
 
-              {/* Decay bar */}
+              {/* Decay bar — grid only; list mode shows inline indicator */}
+              {viewMode !== "list" && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   {isRenewed ? (
@@ -724,17 +975,20 @@ export function FileGrid({
                   />
                 </div>
               </div>
+              )}
 
               {/* Actions */}
               {isConfirmingDelete ? (
                 <div
-                  className="rounded-xl px-3 py-2.5 flex items-center gap-2"
+                  className={`rounded-xl px-3 py-2.5 flex items-center gap-2 ${viewMode === "list" ? "ml-auto" : ""}`}
                   style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)" }}
                 >
                   <AlertTriangleIcon className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />
-                  <p className="text-xs flex-1 leading-snug" style={{ color: "#ef4444" }}>
-                    Permanently delete? Cannot be undone.
-                  </p>
+                  {viewMode !== "list" && (
+                    <p className="text-xs flex-1 leading-snug" style={{ color: "#ef4444" }}>
+                      Permanently delete? Cannot be undone.
+                    </p>
+                  )}
                   <button
                     onClick={() => handleDelete(file.id)}
                     className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-semibold shrink-0"
@@ -745,6 +999,75 @@ export function FileGrid({
                   <button onClick={() => setConfirmState(null)} className="action-btn p-1 rounded-lg shrink-0">
                     <XIcon className="w-3.5 h-3.5" />
                   </button>
+                </div>
+              ) : viewMode === "list" ? (
+                /* ── List mode: compact right-side actions ── */
+                <div className="flex items-center gap-1 ml-auto shrink-0">
+                  {/* Decay dot indicator */}
+                  <span
+                    className="text-xs hidden sm:block"
+                    style={{ color: decayColor, fontFamily: "DM Mono, monospace" }}
+                    title={`${(liveDecayScore * 100).toFixed(0)}% decayed · ${timeLeft} left`}
+                  >
+                    {timeLeft}
+                  </span>
+                  <button
+                    onClick={() => handleRenew(file.id)}
+                    disabled={isRenewing || isRenewed}
+                    className="action-btn-green p-1.5 rounded-lg disabled:opacity-60"
+                    title="Renew"
+                  >
+                    {isRenewing ? (
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#34d399" }} />
+                    ) : (
+                      <RefreshCwIcon className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleDownload(file.id, file.originalFilename)}
+                    disabled={isDownloading}
+                    className="action-btn p-1.5 rounded-lg disabled:opacity-60"
+                    title="Download"
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === file.id ? null : file.id)}
+                      className="action-btn p-1.5 rounded-lg"
+                      title="More actions"
+                    >
+                      <MoreHorizontalIcon className="w-4 h-4" />
+                    </button>
+                    {openMenuId === file.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                        <div
+                          className="absolute right-0 bottom-full mb-1.5 z-20 rounded-xl overflow-hidden py-1 min-w-[160px]"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}
+                        >
+                          <button onClick={() => { handlePreview(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <EyeIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Preview
+                          </button>
+                          <button onClick={() => { startRename(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <PencilIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Rename
+                          </button>
+                          <button onClick={() => { setMovingFile(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <FolderInputIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Move to folder
+                          </button>
+                          <button onClick={() => { openVersions(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <GitBranchIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Versions
+                          </button>
+                          <button onClick={() => { setDetailsFile(file); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors">
+                            <InfoIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-muted)" }} /> Details
+                          </button>
+                          <button onClick={() => { setConfirmState({ id: file.id, action: "delete" }); setOpenMenuId(null) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-[var(--bg-hover)] transition-colors" style={{ color: "#ef4444" }}>
+                            <Trash2Icon className="w-3.5 h-3.5 shrink-0" /> Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div
@@ -884,6 +1207,10 @@ export function FileGrid({
                     )}
                   </div>
                 </div>
+              /* end grid mode actions */
+              )}
+              {/* Close grid/list ternary branch */}
+              </>
               )}
             </div>
           )
@@ -952,7 +1279,7 @@ export function FileGrid({
       {/* ── [P7-2] Bulk move modal ── */}
       {bulkMoving && (
         <Modal title={`Move ${selectedIds.size} file${selectedIds.size !== 1 ? "s" : ""}`} onClose={() => setBulkMoving(false)}>
-          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+          <div className="space-y-1.5 max-h-64 overflow-y-auto overflow-x-hidden">
             <button
               onClick={() => handleBulkMove(null)}
               disabled={bulkLoading}
@@ -982,7 +1309,7 @@ export function FileGrid({
           <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
             Moving: <strong style={{ color: "var(--text)" }}>{movingFile.originalFilename}</strong>
           </p>
-          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+          <div className="space-y-1.5 max-h-64 overflow-y-auto overflow-x-hidden">
             <button
               onClick={() => handleMove(movingFile.id, null)}
               disabled={isLoading(movingFile.id + "-move")}
@@ -1060,7 +1387,7 @@ export function FileGrid({
           ) : versions.length === 0 ? (
             <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No versions found</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 overflow-x-hidden">
               {versions.map((v) => {
                 const isCurrent = v.versionNumber === versionsFile.currentVersionNumber
                 const isConfirmingVersionDelete =
@@ -1070,21 +1397,22 @@ export function FileGrid({
                 return (
                   <div
                     key={v.id}
-                    className="flex items-center gap-3 rounded-xl px-4 py-3 flex-wrap"
+                    className="flex items-center gap-2 rounded-xl px-3 py-2.5"
                     style={{
                       background: isCurrent ? "var(--accent-dim)" : "var(--bg-elevated)",
                       border: `1px solid ${isCurrent ? "rgba(245,166,35,0.25)" : "var(--border)"}`,
+                      minWidth: 0,
                     }}
                   >
                     <span
-                      className="text-xs font-bold w-8 shrink-0"
+                      className="text-xs font-bold w-7 shrink-0"
                       style={{ color: isCurrent ? "var(--accent)" : "var(--text-muted)", fontFamily: "DM Mono, monospace" }}
                     >
                       v{v.versionNumber}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium">{v.label ?? `Version ${v.versionNumber}`}</p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
+                      <p className="text-xs font-medium truncate">{v.label ?? `Version ${v.versionNumber}`}</p>
+                      <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                         {formatBytes(v.sizeBytes)} · {formatRelativeTime(v.uploadedAt)}
                       </p>
                     </div>
@@ -1142,7 +1470,7 @@ export function FileGrid({
       {previewFile && (
         <Modal
           title={previewFile.originalFilename}
-          onClose={() => { setPreviewFile(null); setPreviewUrl(null) }}
+          onClose={() => { setPreviewFile(null); setPreviewUrl(null); setImgZoom(1); imgZoomRef.current = 1 }}
           fullscreen
         >
           <div className="flex flex-col gap-3 overflow-hidden" style={{ flex: 1, minHeight: 0 }}>
@@ -1150,20 +1478,60 @@ export function FileGrid({
               <p className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
                 {formatBytes(previewFile.sizeBytes)} · {previewFile.mimeType}
               </p>
-              <button
-                onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
-                disabled={isLoading(previewFile.id + "-download")}
-                className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md disabled:opacity-60"
-              >
-                {isLoading(previewFile.id + "-download") ? (
-                  <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
-                    style={{ borderColor: "var(--border)", borderTopColor: "var(--text-muted)" }} />Fetching…</>
-                ) : <><DownloadIcon className="w-3.5 h-3.5" /> Download</>}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Zoom controls — only shown for images */}
+                {previewFile.mimeType.startsWith("image/") && (
+                  <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                    <button
+                      onClick={() => { const z = Math.max(0.25, imgZoomRef.current - 0.25); imgZoomRef.current = z; setImgZoom(z) }}
+                      className="w-6 h-6 flex items-center justify-center rounded text-sm font-bold transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: "var(--text-muted)" }}
+                      title="Zoom out"
+                    >−</button>
+                    <span
+                      className="text-xs w-10 text-center select-none"
+                      style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace", cursor: "pointer" }}
+                      onClick={() => { imgZoomRef.current = 1; setImgZoom(1) }}
+                      title="Reset zoom"
+                    >{Math.round(imgZoom * 100)}%</span>
+                    <button
+                      onClick={() => { const z = Math.min(5, imgZoomRef.current + 0.25); imgZoomRef.current = z; setImgZoom(z) }}
+                      className="w-6 h-6 flex items-center justify-center rounded text-sm font-bold transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: "var(--text-muted)" }}
+                      title="Zoom in"
+                    >+</button>
+                  </div>
+                )}
+                <button
+                  onClick={() => handleDownload(previewFile.id, previewFile.originalFilename)}
+                  disabled={isLoading(previewFile.id + "-download")}
+                  className="action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md disabled:opacity-60"
+                >
+                  {isLoading(previewFile.id + "-download") ? (
+                    <><div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                      style={{ borderColor: "var(--border)", borderTopColor: "var(--text-muted)" }} />Fetching…</>
+                  ) : <><DownloadIcon className="w-3.5 h-3.5" /> Download</>}
+                </button>
+              </div>
             </div>
             <div
-              className="rounded-xl overflow-auto flex items-center justify-center"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", flex: 1, minHeight: 0 }}
+              className="rounded-xl flex items-center justify-center"
+              style={{
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                flex: 1,
+                minHeight: 0,
+                overflow: previewFile.mimeType.startsWith("image/") ? "hidden" : "auto",
+                padding: "12px",
+                position: "relative",
+              }}
+              onWheel={previewFile.mimeType.startsWith("image/") ? (e) => {
+                e.preventDefault()
+                const delta = e.deltaY > 0 ? -0.15 : 0.15
+                const z = Math.min(5, Math.max(0.25, imgZoomRef.current + delta))
+                imgZoomRef.current = z
+                setImgZoom(z)
+              } : undefined}
             >
               {previewLoading ? (
                 <div className="flex flex-col items-center gap-3" style={{ color: "var(--text-muted)" }}>
@@ -1175,9 +1543,37 @@ export function FileGrid({
                 <p className="text-sm" style={{ color: "var(--text-muted)" }}>Preview unavailable</p>
               ) : previewFile.mimeType.startsWith("image/") ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={previewUrl} alt={previewFile.originalFilename} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                <img
+                  src={previewUrl}
+                  alt={previewFile.originalFilename}
+                  style={{
+                    maxWidth: "none",
+                    maxHeight: "none",
+                    width: "auto",
+                    height: "auto",
+                    objectFit: "contain",
+                    display: "block",
+                    borderRadius: "8px",
+                    transform: `scale(${imgZoom})`,
+                    transformOrigin: "center center",
+                    transition: "transform 0.15s ease",
+                    userSelect: "none",
+                  }}
+                  draggable={false}
+                />
               ) : previewFile.mimeType.startsWith("video/") ? (
-                <video src={previewUrl} controls style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                <video
+                  src={previewUrl}
+                  controls
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    width: "auto",
+                    height: "auto",
+                    display: "block",
+                    borderRadius: "8px",
+                  }}
+                />
               ) : previewFile.mimeType.startsWith("audio/") ? (
                 <audio src={previewUrl} controls className="w-full" style={{ margin: "auto" }} />
               ) : previewFile.mimeType === "application/pdf" ? (
@@ -1209,17 +1605,18 @@ export function FileGrid({
 
         function Row({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
           return (
-            <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-              <span className="text-xs shrink-0" style={{ color: "var(--text-muted)", minWidth: 120 }}>{label}</span>
-              <span className="text-xs text-right break-all" style={{ color: "var(--text)", fontFamily: mono ? "DM Mono, monospace" : undefined }}>{value}</span>
+            <div className="flex items-start justify-between gap-3 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+              <span className="text-xs shrink-0" style={{ color: "var(--text-muted)", minWidth: 100, maxWidth: 110 }}>{label}</span>
+              <span className="text-xs text-right min-w-0 break-words overflow-hidden" style={{ color: "var(--text)", fontFamily: mono ? "DM Mono, monospace" : undefined, wordBreak: "break-all", maxWidth: "calc(100% - 114px)" }}>{value}</span>
             </div>
           )
         }
 
         return (
           <Modal title="File details" onClose={() => setDetailsFile(null)}>
+            <div className="flex flex-col min-h-0 flex-1">
             {/* Icon + name header */}
-            <div className="flex items-center gap-3 mb-4 pb-4" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-3 mb-4 pb-4 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
               <span className="text-3xl leading-none shrink-0">{getMimeTypeIcon(detailsFile.mimeType)}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">{detailsFile.originalFilename}</p>
@@ -1244,7 +1641,7 @@ export function FileGrid({
             </div>
 
             {/* Info rows */}
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 280px)" }}>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ scrollbarGutter: "stable", paddingRight: "12px", paddingLeft: "2px" }}>
               <Row label="File name"      value={detailsFile.originalFilename} />
               <Row label="Size"           value={formatBytes(detailsFile.sizeBytes)} mono />
               <Row label="Type"           value={detailsFile.mimeType} mono />
@@ -1300,11 +1697,11 @@ export function FileGrid({
                 <Row label="Description"  value={detailsFile.description} />
               )}
               {/* [P9-2] Tags */}
-              <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                <span className="text-xs shrink-0 flex items-center gap-1.5" style={{ color: "var(--text-muted)", minWidth: 120 }}>
+              <div className="flex items-start justify-between gap-3 py-2.5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                <span className="text-xs shrink-0 flex items-center gap-1.5" style={{ color: "var(--text-muted)", minWidth: 100, maxWidth: 110 }}>
                   <TagIcon className="w-3 h-3" /> Tags
                 </span>
-                <div className="flex-1 flex flex-col gap-1.5 items-end">
+                <div className="flex-1 min-w-0 flex flex-col gap-1.5 items-end overflow-hidden">
                   {/* Existing tags */}
                   {(detailsFile.tags ?? []).length > 0 && (
                     <div className="flex flex-wrap gap-1 justify-end">
@@ -1374,10 +1771,128 @@ export function FileGrid({
                 <DownloadIcon className="w-3.5 h-3.5" /> Download
               </button>
             </div>
+            </div>{/* end flex-col wrapper */}
           </Modal>
         )
       })()}
+
+      {/* [P15-4] Undo-delete toasts — one per pending delete */}
+      {undoToasts.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[150] flex flex-col gap-2 items-center pointer-events-none">
+          {Array.from(undoToasts.entries()).map(([fileId, { filename, countdown }]) => (
+            <div
+              key={fileId}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm pointer-events-auto"
+              style={{
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                minWidth: "280px",
+                maxWidth: "380px",
+              }}
+            >
+              <Trash2Icon className="w-4 h-4 shrink-0" style={{ color: "var(--text-muted)" }} />
+              <p className="flex-1 truncate text-xs" style={{ color: "var(--text)" }}>
+                <span className="font-medium">&ldquo;{filename}&rdquo;</span> deleted
+              </p>
+              <button
+                onClick={() => handleUndoDelete(fileId)}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg shrink-0 transition-colors"
+                style={{ background: "var(--accent)", color: "#000" }}
+              >
+                Undo ({countdown}s)
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </>
+  )
+}
+
+// ─── [P18] PreviewThumb ─────────────────────────────────────────────────────
+// Lazy-loads a presigned preview URL for a file and renders it inline on the
+// grid card. Falls back to the emoji icon for unsupported types.
+// Uses /preview-url (60s presigned GET) — does NOT reset the decay clock.
+
+type ThumbState = "idle" | "loading" | "loaded" | "error"
+
+function PreviewThumb({ file }: { file: { id: string; mimeType: string; originalFilename: string } }) {
+  const [state, setState]   = useState<ThumbState>("idle")
+  const [url, setUrl]       = useState<string | null>(null)
+  const containerRef        = useRef<HTMLDivElement>(null)
+  const fetchedRef          = useRef(false)
+
+  // Use IntersectionObserver so we only fetch when the card is visible
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !fetchedRef.current) {
+          fetchedRef.current = true
+          setState("loading")
+          fetch(`/api/files/${file.id}/preview-url`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.previewUrl) { setUrl(d.previewUrl); setState("loaded") }
+              else setState("error")
+            })
+            .catch(() => setState("error"))
+        }
+      },
+      { rootMargin: "120px" }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [file.id])
+
+  const isImage = file.mimeType.startsWith("image/")
+  const isVideo = file.mimeType.startsWith("video/")
+  const canPreview = isImage || isVideo
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full flex items-center justify-center"
+      style={{
+        background: isImage && state === "loaded"
+          ? "repeating-conic-gradient(var(--bg-hover) 0% 25%, var(--bg-elevated) 0% 50%) 0 0 / 12px 12px"
+          : "var(--bg-elevated)",
+      }}
+    >
+      {state === "loaded" && url && isImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt={file.originalFilename}
+          style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", display: "block" }}
+          draggable={false}
+        />
+      )}
+      {state === "loaded" && url && isVideo && (
+        <video
+          src={url}
+          muted
+          playsInline
+          preload="metadata"
+          style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", display: "block" }}
+        />
+      )}
+      {(state === "idle" || state === "loading") && canPreview && (
+        <div className="flex flex-col items-center gap-1.5" style={{ color: "var(--text-dim)" }}>
+          <div
+            className="w-5 h-5 rounded-full border-2 animate-spin"
+            style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }}
+          />
+        </div>
+      )}
+      {(state === "error" || !canPreview) && (
+        <span style={{ fontSize: 36, lineHeight: 1, opacity: 0.6 }}>
+          {getMimeTypeIcon(file.mimeType)}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -1432,13 +1947,14 @@ function TextPreview({ url }: { url: string }) {
   }, [url])
   return (
     <pre
-      className="w-full max-h-96 overflow-auto text-xs p-4 rounded-xl"
+      className="w-full max-h-96 overflow-y-auto overflow-x-hidden text-xs p-4 rounded-xl"
       style={{
         background: "var(--bg-elevated)",
         color: "var(--text)",
         fontFamily: "DM Mono, monospace",
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
+        overflowWrap: "break-word",
       }}
     >
       {text ?? "Loading…"}
@@ -1502,7 +2018,7 @@ function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center sm:p-4 p-0"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       aria-modal="true"
@@ -1512,23 +2028,26 @@ function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`rounded-2xl w-full flex flex-col outline-none ${
-          fullscreen ? "sm:max-w-6xl p-4 sm:p-6" : wide ? "sm:max-w-2xl p-4 sm:p-6" : "max-w-sm p-4 sm:p-6"
+        className={`rounded-t-2xl sm:rounded-2xl w-full flex flex-col outline-none ${
+          fullscreen ? "sm:max-w-5xl p-4 sm:p-6" : wide ? "sm:max-w-xl p-4 sm:p-5" : "sm:max-w-md p-4 sm:p-5"
         }`}
         style={{
           background: "var(--bg-card)",
           border: "1px solid var(--border)",
-          maxHeight: fullscreen ? "92vh" : "85vh",
+          maxHeight: fullscreen ? "92svh" : "88svh",
           overflow: "hidden",
+          overflowX: "hidden",
+          boxSizing: "border-box",
+          marginTop: "env(safe-area-inset-top, 0px)",
         }}
       >
-        <div className="flex items-center justify-between mb-4 shrink-0">
-          <h3 className="text-base font-semibold truncate pr-4">{title}</h3>
+        <div className="flex items-center justify-between mb-4 shrink-0 min-w-0">
+          <h3 className="text-base font-semibold truncate pr-4 min-w-0">{title}</h3>
           <button onClick={onClose} className="action-btn p-1.5 rounded-lg shrink-0" aria-label="Close modal">
             <XIcon className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex flex-col overflow-hidden" style={{ flex: 1, minHeight: 0 }}>
+        <div className="flex flex-col overflow-hidden" style={{ flex: 1, minHeight: 0, overflowX: "hidden" }}>
           {children}
         </div>
       </div>

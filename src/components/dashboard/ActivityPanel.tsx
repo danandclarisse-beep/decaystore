@@ -28,9 +28,9 @@ interface Pagination {
 }
 
 interface Props {
-  plan:   string
-  isOpen: boolean
-  onClose: () => void
+  plan:        string
+  isOpen:      boolean
+  onClose:     () => void
 }
 
 // ─── Event type metadata ─────────────────────────────────────
@@ -126,20 +126,10 @@ export function ActivityPanel({ plan, isOpen, onClose }: Props) {
 
   return (
     <>
-      {/* Backdrop (mobile) */}
+      {/* [P18] Rendered as flat content inside a modal — no internal fixed positioning */}
       <div
-        className="fixed inset-0 z-40 lg:hidden bg-black/50"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div
-        className="fixed inset-y-0 right-0 z-50 flex flex-col lg:relative lg:inset-auto lg:z-auto"
-        style={{
-          width: "min(480px, 100vw)",
-          background: "var(--bg-elevated)",
-          borderLeft: "1px solid var(--border)",
-        }}
+        className="flex flex-col"
+        style={{ minHeight: 0, flex: 1 }}
       >
         {/* Header */}
         <div
@@ -200,6 +190,8 @@ export function ActivityPanel({ plan, isOpen, onClose }: Props) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
+
+          {/* ── Event log ── */}
           {!isEligible ? (
             <div className="flex flex-col items-center justify-center h-full px-6 py-16 text-center">
               <HistoryIcon className="w-8 h-8 mb-3" style={{ color: "var(--text-dim)" }} />
@@ -226,9 +218,9 @@ export function ActivityPanel({ plan, isOpen, onClose }: Props) {
           ) : events.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-6 py-20 text-center">
               <HistoryIcon className="w-8 h-8 mb-3" style={{ color: "var(--text-dim)" }} />
-              <p className="text-sm font-medium mb-1">No activity yet</p>
-              <p className="text-xs" style={{ color: "var(--text-dim)" }}>
-                Events appear here as you upload, renew, or delete files.
+              <p className="text-sm font-medium mb-1" style={{ color: "var(--text)" }}>No activity yet</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Your file events will appear here as files change state — uploads, renewals, warnings, and deletions.
               </p>
             </div>
           ) : (

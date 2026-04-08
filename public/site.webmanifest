@@ -1,0 +1,23 @@
+{
+  "name": "DecayStore",
+  "short_name": "DecayStore",
+  "description": "Intentional storage. Files decay when ignored — only what you use survives.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#f5a623",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

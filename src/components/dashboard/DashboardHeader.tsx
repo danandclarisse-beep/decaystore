@@ -16,6 +16,7 @@ import {
   SettingsIcon,
 } from "lucide-react"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
+import { LogoMark } from "@/components/shared/LogoMark"
 import type { User } from "@/lib/db/schema"
 import type { Notification } from "@/hooks/useNotifications"
 
@@ -118,12 +119,7 @@ export function DashboardHeader({
               }}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-90 transition-opacity pointer-events-auto"
             >
-              <span
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-                style={{ background: "var(--accent)", color: "#000" }}
-              >
-                D
-              </span>
+            <LogoMark size={28} />
               <span
                 className="font-bold text-base hidden sm:block"
                 style={{ fontFamily: "Syne, sans-serif" }}

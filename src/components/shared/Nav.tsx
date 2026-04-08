@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { SignedIn, SignedOut } from "@clerk/nextjs"
 import type { PlanKey } from "@/lib/plans"
+import { LogoMark } from "@/components/shared/LogoMark"
 
 interface Props {
   /** Passed from server components that already have the user's plan.
@@ -52,12 +53,7 @@ export function Nav({ userPlan }: Props = {}) {
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5">
-          <span
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-            style={{ background: "var(--accent)", color: "#000" }}
-          >
-            D
-          </span>
+          <LogoMark size={28} />
           <span
             className="font-bold text-lg tracking-tight"
             style={{ fontFamily: "Syne, sans-serif" }}

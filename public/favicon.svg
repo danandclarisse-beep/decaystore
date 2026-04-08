@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0a0a0b; }
+      .mark { fill: #f5a623; }
+      .fill { fill: #f5a623; opacity: 0.35; }
+    }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #f5f5f0; }
+      .mark { fill: #d4881a; }
+      .fill { fill: #d4881a; opacity: 0.3; }
+    }
+  </style>
+  <!-- Background rounded square -->
+  <rect width="32" height="32" rx="7" class="bg"/>
+  <!-- Hourglass outline -->
+  <path d="M9 5h14l-5.5 9.5L23 24H9l5.5-9.5L9 5Z" class="mark" fill-opacity="0.15" stroke-width="0"/>
+  <!-- Top triangle (full) -->
+  <path d="M9.5 5.5h13l-5 8.5H14.5L9.5 5.5Z" class="mark"/>
+  <!-- Bottom triangle (partially filled = decay) -->
+  <path d="M14.5 18H17.5L22.5 26.5H9.5L14.5 18Z" class="fill"/>
+  <path d="M13 21.5h6L22.5 26.5H9.5L13 21.5Z" class="mark"/>
+  <!-- Waist line -->
+  <rect x="13" y="13.5" width="6" height="1.5" rx="0.75" class="mark"/>
+  <!-- Waist bottom -->
+  <rect x="13" y="17" width="6" height="1.5" rx="0.75" class="mark"/>
+</svg>

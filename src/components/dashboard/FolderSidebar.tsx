@@ -20,6 +20,8 @@ const DECAY_RATE_OPTIONS = [
   { label: "1 year",   value: 365 },
 ]
 
+import { StorageBar } from "@/components/dashboard/StorageBar"
+
 interface Props {
   folders: Folder[]
   currentFolderId: string | null
@@ -29,9 +31,15 @@ interface Props {
   plan?: string
   /** [P12-4] Ref so parent can trigger new-folder via keyboard shortcut (N) */
   newFolderBtnRef?: React.MutableRefObject<HTMLButtonElement | null>
+  /** [P17-6] Storage stats for sidebar StorageBar */
+  storageUsed?: number
+  storageLimit?: number
+  fileCount?: number
+  fileLimit?: number
+  storageLoading?: boolean
 }
 
-export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh, plan, newFolderBtnRef }: Props) {
+export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh, plan, newFolderBtnRef, storageUsed = 0, storageLimit = 1, fileCount = 0, fileLimit = 10, storageLoading = false }: Props) {
   const isPro = plan === "pro"
 
   const [creating, setCreating]           = useState(false)
@@ -115,7 +123,7 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
   }
 
   const sidebarContent = (
-    <div className="rounded-xl p-3 sticky top-24"
+    <div className="rounded-xl p-3"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
 
       {/* Root */}
@@ -132,6 +140,18 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
 
       {/* Folders */}
       <div className="space-y-0.5">
+        {rootFolders.length === 0 && (
+          <div className="px-2 py-3 text-center">
+            <p className="text-xs" style={{ color: "var(--text-dim)" }}>No folders yet</p>
+            <button
+              onClick={() => newFolderBtnRef?.current?.click()}
+              className="mt-1.5 text-xs underline"
+              style={{ color: "var(--accent)" }}
+            >
+              + New folder
+            </button>
+          </div>
+        )}
         {rootFolders.map((folder) => {
           const fileCount     = folders.filter((f) => f.parentId === folder.id).length
           const isConfirming  = confirmDelete?.id === folder.id
@@ -282,9 +302,21 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="w-52 shrink-0 hidden lg:block">
-        {sidebarContent}
+      {/* Desktop sidebar — sticky so it tracks the viewport while you scroll */}
+      <aside className="w-56 shrink-0 hidden lg:block">
+        <div className="sticky top-6 flex flex-col gap-3">
+          {sidebarContent}
+          {/* [P17-6] Storage bar — anchored below folder list, never shifts */}
+          <StorageBar
+            used={storageUsed}
+            limit={storageLimit}
+            plan={plan ?? "free"}
+            fileCount={fileCount}
+            fileLimit={fileLimit}
+            loading={storageLoading}
+            compact
+          />
+        </div>
       </aside>
 
       {/* Mobile: floating toggle — left side, clear of notification FAB on right */}
@@ -324,9 +356,13 @@ export function FolderSidebar({ folders, currentFolderId, onNavigate, onRefresh,
             className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6"
             style={{
               width: "min(420px, calc(100vw - 32px))",
+              maxHeight: "calc(100svh - 48px)",
+              overflowY: "auto",
+              overflowX: "hidden",
               background: "var(--bg-elevated)",
               border: "1px solid var(--border)",
               boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+              boxSizing: "border-box",
             }}
           >
             <div className="flex items-start justify-between mb-4">

@@ -70,7 +70,7 @@ export default function AboutPage() {
               ["Auth",      "Clerk"                  ],
               ["Database",  "Neon (Postgres)"        ],
               ["Storage",   "Cloudflare R2"          ],
-              ["Billing",   "Stripe"                 ],
+              ["Billing",   "LemonSqueezy"           ],
               ["Email",     "Resend"                 ],
               ["Hosting",   "Vercel"                 ],
               ["ORM",       "Drizzle"                ],

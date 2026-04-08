@@ -1,3 +1,6 @@
+// ROUTE: POST /api/stripe/checkout
+// FILE:  src/app/api/stripe/checkout/route.ts
+
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { getOrCreateUser } from "@/lib/auth-helpers"
@@ -5,8 +8,10 @@ import { createCheckoutSession } from "@/lib/lemonsqueezy"
 import { rateLimit } from "@/lib/rate-limit"
 import { z } from "zod"
 
+// [P19] Added "trial" to the accepted plan enum.
+// "trial" routes to LEMONSQUEEZY_VARIANT_PRO_TRIAL in createCheckoutSession.
 const checkoutSchema = z.object({
-  plan: z.enum(["starter", "pro"]),
+  plan: z.enum(["starter", "pro", "trial"]),
 })
 
 // POST /api/stripe/checkout — creates a LemonSqueezy checkout URL

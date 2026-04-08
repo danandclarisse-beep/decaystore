@@ -100,7 +100,7 @@ export function ApiKeysPanel({ isPro }: Props) {
   return (
     <div
       className="rounded-2xl overflow-hidden"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflowX: "hidden" }}
     >
       {/* Header */}
       <div

@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
-import { XIcon, ZapIcon, CheckIcon } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { XIcon, ZapIcon, CheckIcon, ClockIcon } from "lucide-react"
 import { PLANS, PLAN_STORAGE_LIMITS } from "@/lib/plans"
 import { formatBytes } from "@/lib/utils"
 import type { User } from "@/lib/db/schema"
@@ -11,13 +11,15 @@ interface Props {
   user: User | null
 }
 
-// [P6-1] Shown once when the user lands on /dashboard?upgraded=true after
-// completing the LemonSqueezy checkout. Clears the query param from the URL
-// and stores a dismissed key in localStorage so it never re-appears.
+// [P6-1 / P19] Secondary inline banner shown after a successful checkout return.
+// The primary celebration is now handled by SubscriptionSuccessModal (P19).
+// This banner persists in the dashboard until the user dismisses it, serving as
+// a persistent reminder of what they activated — including the trial plan.
+// NOTE: URL cleanup (?upgraded=true) is performed by SubscriptionSuccessModal
+// so this component no longer needs to do it.
 export function UpgradeBanner({ user }: Props) {
   const searchParams = useSearchParams()
-  const router       = useRouter()
-  const [visible, setVisible] = useState(false)
+  const [visible, setVisible]   = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -25,43 +27,51 @@ export function UpgradeBanner({ user }: Props) {
     const dismissKey  = `ds_upgrade_banner_${user.plan}_${user.id}`
     const alreadySeen = localStorage.getItem(dismissKey)
 
+    // Show the banner once per plan, triggered by ?upgraded=true.
+    // SubscriptionSuccessModal handles URL cleanup, so we only check the flag.
     if (wasUpgraded && !alreadySeen) {
       setVisible(true)
-      // Remove ?upgraded=true from the URL without a page reload
-      const url = new URL(window.location.href)
-      url.searchParams.delete("upgraded")
-      router.replace(url.pathname + (url.search || ""), { scroll: false })
     }
-  }, [searchParams, user, router])
+  }, [searchParams, user])
 
   function dismiss() {
     if (!user) return
-    const dismissKey = `ds_upgrade_banner_${user.plan}_${user.id}`
-    localStorage.setItem(dismissKey, "1")
+    localStorage.setItem(`ds_upgrade_banner_${user.plan}_${user.id}`, "1")
     setVisible(false)
   }
 
-  if (!visible || !user || user.plan === "free") return null
+  // Exclude free and trial_expired; trial IS shown (user just activated it)
+  if (!visible || !user || user.plan === "free" || user.plan === "trial_expired") return null
 
-  const plan       = PLANS[user.plan as keyof typeof PLANS]
-  const storageStr = formatBytes(PLAN_STORAGE_LIMITS[user.plan as keyof typeof PLAN_STORAGE_LIMITS])
+  const isTrial    = user.plan === "trial"
+  // For trial, fall back to "pro" plan config since trial === pro feature set
+  const planKey    = isTrial ? "pro" : user.plan
+  const plan       = PLANS[planKey as keyof typeof PLANS]
+  const storageStr = formatBytes(PLAN_STORAGE_LIMITS[planKey as keyof typeof PLAN_STORAGE_LIMITS])
 
-  const highlights: string[] = {
-    starter: [
-      `${storageStr} storage`,
-      `Up to ${plan.maxFiles.toLocaleString()} files`,
-      `${plan.decayDays}-day decay window`,
-      "Email warnings & renewal",
-    ],
-    pro: [
-      `${storageStr} storage`,
-      "Unlimited files",
-      `${plan.decayDays}-day decay window`,
-      "Custom decay rates per file",
-      "API access + developer docs",
-      "Priority support (24h)",
-    ],
-  }[user.plan] ?? []
+  const highlights: string[] = isTrial
+    ? [
+        `${storageStr} storage`,
+        "Unlimited files",
+        `${plan?.decayDays ?? 365}-day decay window`,
+        "API access + developer docs",
+      ]
+    : ({
+        starter: [
+          `${storageStr} storage`,
+          `Up to ${plan?.maxFiles?.toLocaleString() ?? "1,000"} files`,
+          `${plan?.decayDays ?? 90}-day decay window`,
+          "Email warnings & renewal",
+        ],
+        pro: [
+          `${storageStr} storage`,
+          "Unlimited files",
+          `${plan?.decayDays ?? 365}-day decay window`,
+          "Custom decay rates per file",
+          "API access + developer docs",
+          "Priority support (24h)",
+        ],
+      } as Record<string, string[]>)[user.plan] ?? []
 
   return (
     <div
@@ -77,16 +87,18 @@ export function UpgradeBanner({ user }: Props) {
           className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "var(--accent)", color: "#000" }}
         >
-          <ZapIcon className="w-5 h-5" />
+          {isTrial ? <ClockIcon className="w-5 h-5" /> : <ZapIcon className="w-5 h-5" />}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>
-            You&apos;re now on {plan.name}
+            {isTrial ? "14-day Pro trial — active" : `You're now on ${plan?.name ?? user.plan}`}
           </p>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
-            {plan.description} — here&apos;s what&apos;s unlocked:
+            {isTrial
+              ? "Full Pro access at no charge for 14 days. Here's what's unlocked:"
+              : `${plan?.description ?? ""} — here's what's unlocked:`}
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-3">
@@ -97,6 +109,19 @@ export function UpgradeBanner({ user }: Props) {
               </div>
             ))}
           </div>
+
+          {/* Trial billing note */}
+          {isTrial && user.trialEndsAt && (
+            <p className="text-xs mt-3" style={{ color: "var(--text-dim)" }}>
+              Trial ends{" "}
+              <strong style={{ color: "var(--text-muted)" }}>
+                {new Date(user.trialEndsAt).toLocaleDateString(undefined, {
+                  month: "long", day: "numeric", year: "numeric",
+                })}
+              </strong>
+              {" "}— $15/mo after. Cancel anytime from Account settings.
+            </p>
+          )}
         </div>
 
         {/* Dismiss */}

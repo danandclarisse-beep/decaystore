@@ -1,10 +1,12 @@
+// FILE: src/lib/lemonsqueezy.ts
+
 // ─── LemonSqueezy client (replaces stripe.ts) ────────────
 // Docs: https://docs.lemonsqueezy.com/api
 import { createHmac, timingSafeEqual } from "crypto"
 
-const LS_API_KEY = process.env.LEMONSQUEEZY_API_KEY!
+const LS_API_KEY  = process.env.LEMONSQUEEZY_API_KEY!
 const LS_STORE_ID = process.env.LEMONSQUEEZY_STORE_ID!
-const BASE = "https://api.lemonsqueezy.com/v1"
+const BASE        = "https://api.lemonsqueezy.com/v1"
 
 async function lsRequest(path: string, options?: RequestInit) {
   const res = await fetch(`${BASE}${path}`, {
@@ -30,13 +32,29 @@ export { PLANS, PLAN_STORAGE_LIMITS } from "@/lib/plans"
 export type { PlanKey } from "@/lib/plans"
 
 // ─── Create a checkout URL ────────────────────────────────
+// [P18] Added "trial" planKey — routes to LEMONSQUEEZY_VARIANT_PRO_TRIAL.
+// [FIX] Added console.log to confirm custom_data.user_id is embedded at checkout
+//       creation time. If the webhook later receives no user_id, it means
+//       LemonSqueezy is dropping custom_data in the redirect flow — the webhook
+//       handler's billingCustomerId fallback will recover from this automatically.
 export async function createCheckoutSession(
   userId: string,
   userEmail: string,
-  planKey: "starter" | "pro"
+  planKey: "starter" | "pro" | "trial"
 ) {
-  const plan = PLANS[planKey]
-  if (!plan.variantId) throw new Error("No variant ID for plan: " + planKey)
+  let variantId: string | null
+
+  if (planKey === "trial") {
+    variantId = process.env.LEMONSQUEEZY_VARIANT_PRO_TRIAL ?? null
+  } else {
+    variantId = PLANS[planKey].variantId
+  }
+
+  if (!variantId) throw new Error("No variant ID for plan: " + planKey)
+
+  // [FIX] Log that we are embedding the user_id so we can cross-reference
+  // against webhook logs if a plan is not applied after checkout.
+  console.log(`[LS Checkout] Creating checkout for userId="${userId}" plan="${planKey}" variantId="${variantId}"`)
 
   const body = {
     data: {
@@ -44,6 +62,11 @@ export async function createCheckoutSession(
       attributes: {
         checkout_data: {
           email: userEmail,
+          // custom_data.user_id is the internal DB uuid.
+          // The webhook handler reads this from event.meta.custom_data.user_id
+          // and uses it to locate the user row for the plan update.
+          // If LemonSqueezy drops this in redirect mode, the webhook falls back
+          // to a billingCustomerId lookup — see src/app/api/webhooks/stripe/route.ts.
           custom: { user_id: userId },
         },
         checkout_options: {
@@ -58,7 +81,7 @@ export async function createCheckoutSession(
           data: { type: "stores", id: LS_STORE_ID },
         },
         variant: {
-          data: { type: "variants", id: plan.variantId },
+          data: { type: "variants", id: variantId },
         },
       },
     },
@@ -69,9 +92,10 @@ export async function createCheckoutSession(
     body: JSON.stringify(body),
   })
 
-  return {
-    url: data.data.attributes.url as string,
-  }
+  const url = data.data.attributes.url as string
+  console.log(`[LS Checkout] Checkout URL created for userId="${userId}" plan="${planKey}"`)
+
+  return { url }
 }
 
 // ─── Create a customer portal URL ────────────────────────

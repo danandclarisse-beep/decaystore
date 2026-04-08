@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       ok: true,
       timestamp: new Date().toISOString(),
       stats,
+      pages: stats.pages,
     })
   } catch (err) {
     console.error("[CRON] Decay cycle failed:", err)

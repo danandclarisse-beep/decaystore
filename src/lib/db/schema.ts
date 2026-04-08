@@ -18,7 +18,8 @@ export const fileStatusEnum = pgEnum("file_status", [
   "deleted",
 ])
 
-export const planEnum = pgEnum("plan", ["free", "starter", "pro"])
+// [P18] Added 'trial' and 'trial_expired'
+export const planEnum = pgEnum("plan", ["free", "starter", "pro", "trial", "trial_expired"])
 
 // ─── Users ────────────────────────────────────────────────
 export const users = pgTable("users", {
@@ -34,6 +35,10 @@ export const users = pgTable("users", {
   emailDigestEnabled:    boolean("email_digest_enabled").notNull().default(true),
   // [P12-1] Lets users silence the 50%/90%/pre-deletion decay warning emails.
   decayWarningsEnabled:  boolean("decay_warnings_enabled").notNull().default(true),
+  // [P18] Trial columns
+  trialEndsAt:           timestamp("trial_ends_at"),
+  trialExpiredAt:        timestamp("trial_expired_at"),
+  createdVia:            text("created_via").notNull().default("direct"),
 })
 
 // ─── Folders ──────────────────────────────────────────────
@@ -122,6 +127,19 @@ export const storageSnapshots = pgTable("storage_snapshots", {
   snapshotDate:     timestamp("snapshot_date").defaultNow().notNull(),
 })
 
+// ─── Waitlist ─────────────────────────────────────────────
+// [P18] Controlled rollout queue. status: pending | approved | token_expired | signed_up
+export const waitlist = pgTable("waitlist", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  email:          text("email").notNull().unique(),
+  status:         text("status").notNull().default("pending"),
+  token:          text("token").unique(),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  joinedAt:       timestamp("joined_at").defaultNow().notNull(),
+  approvedAt:     timestamp("approved_at"),
+  signedUpAt:     timestamp("signed_up_at"),
+})
+
 // ─── Types ────────────────────────────────────────────────
 export type User            = typeof users.$inferSelect
 export type NewUser         = typeof users.$inferInsert
@@ -133,3 +151,5 @@ export type FileVersion     = typeof fileVersions.$inferSelect
 export type DecayEvent      = typeof decayEvents.$inferSelect
 export type ApiKey          = typeof apiKeys.$inferSelect
 export type StorageSnapshot = typeof storageSnapshots.$inferSelect
+export type Waitlist        = typeof waitlist.$inferSelect
+export type NewWaitlist     = typeof waitlist.$inferInsert

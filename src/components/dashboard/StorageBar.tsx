@@ -10,11 +10,19 @@ interface Props {
   fileCount?: number
   fileLimit?: number
   loading?: boolean
+  compact?: boolean
 }
 
-export function StorageBar({ used, limit, plan, fileCount, fileLimit, loading = false }: Props) {
+export function StorageBar({ used, limit, plan, fileCount, fileLimit, loading = false, compact = false }: Props) {
   // Prevent "0 / 0 GB" flash during initial load
   if (loading) {
+    if (compact) {
+      return (
+        <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <div className="h-1.5 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+        </div>
+      )
+    }
     return (
       <div className="rounded-xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex items-center gap-3 mb-3">
@@ -31,6 +39,34 @@ export function StorageBar({ used, limit, plan, fileCount, fileLimit, loading = 
     pct > 90 ? "#ef4444" :
     pct > 70 ? "#f97316" :
     "var(--accent)"
+
+  // [P17-6] Compact mode — used in sidebar
+  if (compact) {
+    return (
+      <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-medium flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+            <HardDriveIcon className="w-3 h-3" style={{ color: "var(--text-dim)" }} />
+            Storage
+          </span>
+          <span className="text-xs" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
+            {pct.toFixed(0)}%
+          </span>
+        </div>
+        <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: barColor }} />
+        </div>
+        <p className="text-xs mt-1.5" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
+          {formatBytes(used)} / {formatBytes(limit)}
+        </p>
+        {pct >= 80 && plan !== "pro" && (
+          <Link href="/pricing" className="mt-1.5 text-xs block" style={{ color: barColor, textDecoration: "underline" }}>
+            Upgrade →
+          </Link>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useDropzone } from "react-dropzone"
 import {
   UploadCloudIcon, CheckCircleIcon, XCircleIcon,
-  XIcon, RefreshCwIcon, FileIcon, FingerprintIcon,
+  XIcon, RefreshCwIcon, FileIcon,
   ClockIcon, ChevronDownIcon,
 } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
@@ -18,6 +18,8 @@ interface Props {
   currentFolder?: { defaultDecayRateDays: number | null } | null
   // [P12-4] Ref so parent can programmatically trigger file picker (keyboard shortcut U)
   uploadTriggerRef?: React.MutableRefObject<(() => void) | null>
+  // [P18] Called when user needs to upgrade (trial expired upload block)
+  onUpgrade?: () => void
 }
 
 interface UploadState {
@@ -26,27 +28,25 @@ interface UploadState {
   status: "uploading" | "done" | "error"
   progress: number
   error?: string
+  errorType?: "storage_full" | "trial_expired" | "generic"
 }
 
 // [P5-1] Valid decay rate options exposed to Pro users in the upload form.
-// Free and Starter users are locked to their plan default — this selector
-// is hidden for them and the server enforces the plan rate regardless.
 const DECAY_RATE_OPTIONS = [
-  { label: "7 days",  value: 7  },
-  { label: "14 days", value: 14 },
-  { label: "30 days", value: 30 },
-  { label: "60 days", value: 60 },
-  { label: "90 days", value: 90 },
+  { label: "7 days",   value: 7   },
+  { label: "14 days",  value: 14  },
+  { label: "30 days",  value: 30  },
+  { label: "60 days",  value: 60  },
+  { label: "90 days",  value: 90  },
   { label: "180 days", value: 180 },
-  { label: "1 year",  value: 365 },
+  { label: "1 year",   value: 365 },
 ] as const
 
-export function FileUploader({ onUploadComplete, plan, currentFolderId, currentFolder, uploadTriggerRef }: Props) {
+export function FileUploader({ onUploadComplete, plan, currentFolderId, currentFolder, uploadTriggerRef, onUpgrade }: Props) {
   const [uploads, setUploads]         = useState<UploadState[]>([])
-  const [isTouch, setIsTouch]         = useState(false)
-  const isPro = plan === "pro"
+  const isPro = plan === "pro" || plan === "trial"
 
-  // [P5-1] Custom decay rate — only sent when user is Pro.
+  // [P5-1] Custom decay rate — only sent when user is Pro or on trial.
   // [P8-3] Initialise from folder's defaultDecayRateDays if set; else plan default (90d).
   const folderDefault = isPro && currentFolder?.defaultDecayRateDays
     ? currentFolder.defaultDecayRateDays
@@ -63,10 +63,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder?.defaultDecayRateDays, isPro])
-
-  useEffect(() => {
-    setIsTouch(window.matchMedia("(pointer: coarse)").matches)
-  }, [])
 
   function patchUpload(id: string, patch: Partial<UploadState>) {
     setUploads((prev) => prev.map((u) => u.id === id ? { ...u, ...patch } : u))
@@ -88,8 +84,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
         ...(currentFolderId != null && { folderId: currentFolderId }),
       }
 
-      // [P5-1] Pro users can pass a custom decayRateDays at upload time.
-      // The server validates the plan and enforces allowed values.
+      // [P5-1] Pro/trial users can pass a custom decayRateDays at upload time.
       if (isPro) {
         body.decayRateDays = decayRateDays
       }
@@ -102,10 +97,25 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
 
       if (!metaRes.ok) {
         const err = await metaRes.json()
-        // [P12-3] 507 = storage quota exceeded — surface a clear actionable message
+
+        // [P18] 507 can mean storage full OR trial expired — differentiate by error message
         if (metaRes.status === 507) {
-          throw new Error("Storage full — upgrade your plan or delete files to make room.")
+          if (err.error?.includes("trial")) {
+            patchUpload(id, {
+              status:    "error",
+              errorType: "trial_expired",
+              error:     "Your trial has ended. Subscribe to continue uploading.",
+            })
+            return
+          }
+          patchUpload(id, {
+            status:    "error",
+            errorType: "storage_full",
+            error:     "Storage full — upgrade your plan or delete files to make room.",
+          })
+          return
         }
+
         throw new Error(err.error ?? "Upload failed")
       }
 
@@ -126,8 +136,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
       })
 
       // [P6-3] Confirm the upload so the file appears in the dashboard.
-      // Must be awaited — fetchAll() filters to uploadConfirmed=true, so calling
-      // onUploadComplete() before this resolves causes the file to not appear.
       try {
         await fetch(`/api/files/${newFile.id}/confirm`, { method: "POST" })
       } catch {
@@ -141,8 +149,9 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
       }, 4000)
     } catch (err) {
       patchUpload(id, {
-        status: "error",
-        error: err instanceof Error ? err.message : "Upload failed",
+        status:    "error",
+        errorType: "generic",
+        error:     err instanceof Error ? err.message : "Upload failed",
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,66 +182,48 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
   const selectedOption = DECAY_RATE_OPTIONS.find((o) => o.value === decayRateDays)
 
   return (
-    <div className="space-y-3">
-      <div
-        {...getRootProps()}
-        className="rounded-xl p-6 sm:p-8 text-center cursor-pointer transition-all"
-        style={{
-          background:  isDragActive ? "var(--accent-dim)" : "var(--bg-card)",
-          border:      isDragActive ? "2px dashed var(--accent)" : "2px dashed var(--border)",
-        }}
-      >
+    <>
+      {/* [P17-4] Hidden dropzone root — covers the whole page while dragging. */}
+      <div {...getRootProps()} style={{ display: "contents" }}>
         <input {...getInputProps()} />
-        {isTouch ? (
-          <FingerprintIcon
-            className="w-7 h-7 mx-auto mb-2"
-            style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
-          />
-        ) : (
-          <UploadCloudIcon
-            className="w-7 h-7 mx-auto mb-2"
-            style={{ color: isDragActive ? "var(--accent)" : "var(--text-dim)" }}
-          />
-        )}
-        <p className="text-sm font-medium">
-          {isDragActive
-            ? "Drop to upload"
-            : isTouch
-            ? "Tap to browse files"
-            : "Drop files here or click to browse"}
-        </p>
-        <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-          Images, video, audio, PDF, documents — any file up to 5 GB
-        </p>
       </div>
 
-      {/* [P5-1] Pro decay rate picker — shown only for Pro users, below the drop zone */}
-      {isPro && (
+      {/* [P17-4] Full-window drag-over overlay — only visible while dragging */}
+      {isDragActive && (
         <div
-          className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+          className="fixed inset-0 z-[250] flex flex-col items-center justify-center gap-4 pointer-events-none"
           style={{
-            background: "var(--bg-card)",
-            border:     "1px solid var(--border)",
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(4px)",
+            border: "3px dashed var(--accent)",
           }}
         >
+          <UploadCloudIcon className="w-16 h-16" style={{ color: "var(--accent)" }} />
+          <p className="text-2xl font-bold" style={{ color: "var(--accent)", fontFamily: "Syne, sans-serif" }}>
+            Drop to upload
+          </p>
+          {currentFolderId && (
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Files will be added to the current folder
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* [P5-1] Pro/trial decay rate picker */}
+      {isPro && (
+        <div className="flex items-center gap-2">
           <ClockIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
-          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-            Decay rate for new uploads
+          <span className="text-xs font-medium hidden sm:block" style={{ color: "var(--text-muted)" }}>
+            Decay
             {currentFolder?.defaultDecayRateDays && (
-              <span className="text-xs" style={{ color: "var(--text-dim)" }}>
-                (folder default)
-              </span>
+              <span className="ml-1" style={{ color: "var(--text-dim)" }}>(folder)</span>
             )}
-            <HelpTooltip
-              content="How many days before this file is deleted if not accessed. Pro users can set a custom rate per file or inherit from the folder default."
-              guideAnchor="pro"
-              position="top"
-            />
           </span>
-          <div className="relative ml-auto">
+          <div className="relative">
             <button
               onClick={() => setShowDecayPicker((o) => !o)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
               style={{
                 background: "var(--bg-elevated)",
                 border:     "1px solid var(--border)",
@@ -242,7 +233,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
               {selectedOption?.label ?? "90 days"}
               <ChevronDownIcon className="w-3 h-3" />
             </button>
-
             {showDecayPicker && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowDecayPicker(false)} />
@@ -266,51 +256,52 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
                       }}
                     >
                       {opt.label}
-                      {decayRateDays === opt.value && (
-                        <span style={{ color: "var(--accent)" }}>✓</span>
-                      )}
+                      {decayRateDays === opt.value && <span style={{ color: "var(--accent)" }}>✓</span>}
                     </button>
                   ))}
-                  <div
-                    className="px-4 py-2 text-xs"
-                    style={{
-                      color:        "var(--text-dim)",
-                      borderTop:    "1px solid var(--border-subtle)",
-                      marginTop:    4,
-                    }}
-                  >
-                    File auto-deletes after this period of inactivity
+                  <div className="px-4 py-2 text-xs" style={{ color: "var(--text-dim)", borderTop: "1px solid var(--border-subtle)", marginTop: 4 }}>
+                    Auto-deletes after this period of inactivity
                   </div>
                 </div>
               </>
             )}
           </div>
+          <HelpTooltip
+            content="How many days before this file is deleted if not accessed. Pro users can set a custom rate per file."
+            guideAnchor="pro"
+            position="bottom"
+          />
         </div>
       )}
 
-      {/* Upload progress list */}
+      {/* Upload progress — fixed bottom toast stack */}
       {uploads.length > 0 && (
-        <div className="space-y-2" role="status" aria-live="polite" aria-label="Upload progress">
+        <div
+          className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2 w-[320px] max-w-[calc(100vw-3rem)]"
+          role="status"
+          aria-live="polite"
+          aria-label="Upload progress"
+        >
           {activeUploads.length > 1 && (
-            <div className="flex items-center justify-between px-1">
-              <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                Uploading {activeUploads.length} file{activeUploads.length !== 1 ? "s" : ""}…
-              </p>
-              {finishedCount > 0 && (
-                <p className="text-xs" style={{ color: "var(--text-dim)" }}>
-                  {finishedCount} finished
-                </p>
-              )}
+            <div
+              className="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+            >
+              <span>Uploading {activeUploads.length} files…</span>
+              {finishedCount > 0 && <span style={{ color: "var(--text-dim)" }}>{finishedCount} done</span>}
             </div>
           )}
-
           {uploads.map((u) => (
             <div
               key={u.id}
-              className="rounded-lg px-4 py-3"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+              className="rounded-xl px-3 py-2.5"
+              style={{
+                background: "var(--bg-elevated)",
+                border: `1px solid ${u.status === "error" ? "rgba(239,68,68,0.3)" : u.status === "done" ? "rgba(52,211,153,0.3)" : "var(--border)"}`,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+              }}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 {u.status === "done" ? (
                   <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#34d399" }} />
                 ) : u.status === "error" ? (
@@ -318,47 +309,46 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
                 ) : (
                   <FileIcon className="w-4 h-4 shrink-0" style={{ color: "var(--text-dim)" }} />
                 )}
-
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm truncate">{u.file.name}</p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs hidden sm:block" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
-                        {formatBytes(u.file.size)}
+                    <p className="text-xs font-medium truncate">{u.file.name}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "DM Mono, monospace" }}>
+                        {u.status === "uploading" ? `${u.progress}%` : formatBytes(u.file.size)}
                       </span>
-                      {u.status === "uploading" && (
-                        <span className="text-xs" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
-                          {u.progress}%
-                        </span>
-                      )}
-                      {u.status === "error" && (
+                      {u.status === "error" && u.errorType !== "trial_expired" && (
                         <button
                           onClick={() => retryUpload(u)}
-                          className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md"
+                          className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
                           style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
                         >
-                          <RefreshCwIcon className="w-3 h-3" /> Retry
+                          <RefreshCwIcon className="w-2.5 h-2.5" /> Retry
                         </button>
                       )}
                       {(u.status === "done" || u.status === "error") && (
                         <button onClick={() => dismissUpload(u.id)} className="action-btn p-0.5 rounded">
-                          <XIcon className="w-3.5 h-3.5" />
+                          <XIcon className="w-3 h-3" />
                         </button>
                       )}
                     </div>
                   </div>
-
                   {u.status === "uploading" && (
                     <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
-                      <div
-                        className="h-full rounded-full transition-all duration-150"
-                        style={{ width: `${u.progress}%`, background: "var(--accent)" }}
-                      />
+                      <div className="h-full rounded-full transition-all duration-150" style={{ width: `${u.progress}%`, background: "var(--accent)" }} />
                     </div>
                   )}
-
                   {u.status === "error" && u.error && (
-                    <p className="text-xs mt-1" style={{ color: "#ef4444" }}>{u.error}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "#ef4444" }}>{u.error}</p>
+                  )}
+                  {/* [P18] Trial expired CTA inline in toast */}
+                  {u.status === "error" && u.errorType === "trial_expired" && onUpgrade && (
+                    <button
+                      onClick={onUpgrade}
+                      className="mt-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg"
+                      style={{ background: "#ef4444", color: "#fff" }}
+                    >
+                      Upgrade — $15/mo
+                    </button>
                   )}
                 </div>
               </div>
@@ -366,6 +356,6 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

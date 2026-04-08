@@ -1,26 +1,32 @@
+// ROUTE: /dashboard
+// FILE:  src/app/dashboard/page.tsx
+
 "use client"
 
 import { useEffect, useState, useCallback, useRef, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import { FileUploader } from "@/components/dashboard/FileUploader"
 import { FileGrid } from "@/components/dashboard/FileGrid"
-import { StorageBar } from "@/components/dashboard/StorageBar"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { FolderSidebar } from "@/components/dashboard/FolderSidebar"
 import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import { UpgradeBanner } from "@/components/dashboard/UpgradeBanner"
-import { OnboardingBanner, DecayExplainer } from "@/components/dashboard/OnboardingBanner"
+import { OnboardingBanner } from "@/components/dashboard/OnboardingBanner"
 import { ActivityPanel } from "@/components/dashboard/ActivityPanel"
 import { AnalyticsPanel } from "@/components/dashboard/AnalyticsPanel"
 import { ApiKeysPanel } from "@/components/dashboard/ApiKeysPanel"
+import { TrialBanner } from "@/components/dashboard/TrialBanner"
+import { TrialExpiredBanner } from "@/components/dashboard/TrialExpiredBanner"
+import { TrialRedirectOverlay } from "@/components/dashboard/TrialRedirectOverlay"
+import { SubscriptionSuccessModal } from "@/components/dashboard/SubscriptionSuccessModal"
 import { useNotifications } from "@/hooks/useNotifications"
 import { PLAN_STORAGE_LIMITS, PLANS } from "@/lib/plans"
 import {
   ChevronRightIcon, HomeIcon, ArrowLeftIcon,
   AlertTriangleIcon, RefreshCwIcon, HistoryIcon, BarChart2Icon, KeyIcon,
-  KeyboardIcon, XIcon,
+  KeyboardIcon, XIcon, UploadCloudIcon, ListIcon, LayoutGridIcon, ImageIcon,
 } from "lucide-react"
-import { HelpTooltip } from "@/components/dashboard/HelpTooltip"
+import { ErrorBoundary } from "@/components/dashboard/ErrorBoundary"
 import type { File, User, Folder } from "@/lib/db/schema"
 
 export default function DashboardPageWrapper() {
@@ -37,6 +43,7 @@ function DashboardPage() {
   const [user, setUser]             = useState<User | null>(null)
   const [loading, setLoading]       = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [trialRedirecting, setTrialRedirecting] = useState(false)
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState<Folder[]>([])
   // [P8-1] Activity panel open/close
@@ -53,12 +60,35 @@ function DashboardPage() {
   const searchInputRef   = useRef<HTMLInputElement | null>(null)
   const newFolderBtnRef  = useRef<HTMLButtonElement | null>(null)
 
+  // [P17-8] List vs grid view toggle — persisted to localStorage
   const router = useRouter()
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "preview">("grid")
+
+  useEffect(() => {
+    const saved = localStorage.getItem("ds-view-mode") as "grid" | "list" | "preview" | null
+    if (saved) setViewMode(saved)
+  }, [])
+  function toggleViewMode() {
+    setViewMode((v) => {
+      const next = v === "grid" ? "list" : v === "list" ? "preview" : "grid"
+      localStorage.setItem("ds-view-mode", next)
+      return next
+    })
+  }
 
   // ─── Renew file handler (called from notification actions) ─────
-  const renewFileRef = useRef<((fileId: string) => Promise<void>) | null>(null)
-  const handleRenewFile = useCallback(async (fileId: string) => {
+  const renewFileRef    = useRef<((fileId: string) => Promise<void>) | null>(null)
+  const previewFileRef  = useRef<((file: File) => void) | null>(null)
+  const downloadFileRef = useRef<((fileId: string, filename: string) => void) | null>(null)
+
+  const handleRenewFile    = useCallback(async (fileId: string) => {
     if (renewFileRef.current) await renewFileRef.current(fileId)
+  }, [])
+  const handlePreviewFile  = useCallback((file: File) => {
+    if (previewFileRef.current) previewFileRef.current(file)
+  }, [])
+  const handleDownloadFile = useCallback((fileId: string, filename: string) => {
+    if (downloadFileRef.current) downloadFileRef.current(fileId, filename)
   }, [])
 
   // ─── Notifications ─────────────────────────────────────────────
@@ -101,10 +131,33 @@ function DashboardPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // [P19] Trial intent redirect — runs once on mount, after account creation.
+  // Shows TrialRedirectOverlay so users see a guided transition instead of a
+  // blank flash before being sent to LemonSqueezy checkout.
+  useEffect(() => {
+    try {
+      const intent = sessionStorage.getItem("ds_signup_intent")
+      if (intent === "trial") {
+        sessionStorage.removeItem("ds_signup_intent")
+        setTrialRedirecting(true)
+        fetch("/api/stripe/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan: "trial" }),
+        })
+          .then((res) => res.json())
+          .then((data) => { if (data.url) window.location.href = data.url })
+          .catch((err) => {
+            console.error(err)
+            setTrialRedirecting(false)
+          })
+      }
+    } catch {}
+  }, [])
+
   // [P12-4] Global keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Ignore when typing in an input / textarea / contenteditable
       const tag = (e.target as HTMLElement)?.tagName
       const isEditable = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable
 
@@ -187,7 +240,12 @@ function DashboardPage() {
     }
   }
 
-  const storageLimit   = user ? PLAN_STORAGE_LIMITS[user.plan] : PLAN_STORAGE_LIMITS.free
+  // [P18] Upgrade handler — routes to pricing page
+  function handleUpgrade() {
+    router.push("/pricing")
+  }
+
+  const storageLimit   = user ? PLAN_STORAGE_LIMITS[user.plan as keyof typeof PLAN_STORAGE_LIMITS] : PLAN_STORAGE_LIMITS.free
   const storageUsed    = user?.storageUsedBytes ?? 0
   const fileLimit      = user ? (PLANS[user.plan as keyof typeof PLANS]?.maxFiles ?? 10) : 10
   const visibleFiles   = files.filter((f) => (f.folderId ?? null) === currentFolderId)
@@ -197,6 +255,11 @@ function DashboardPage() {
 
   return (
     <div style={{ background: "var(--bg)", minHeight: "100vh" }}>
+      {/* [P19] Full-screen overlay shown while redirecting new trial users to checkout */}
+      <TrialRedirectOverlay visible={trialRedirecting} />
+
+      {/* [P19] Congratulations modal shown once on return from successful checkout */}
+      <SubscriptionSuccessModal user={user} />
       <DashboardHeader
         user={user}
         notifications={notifications}
@@ -215,43 +278,48 @@ function DashboardPage() {
           onRefresh={fetchAll}
           plan={user?.plan ?? "free"}
           newFolderBtnRef={newFolderBtnRef}
+          storageUsed={storageUsed}
+          storageLimit={storageLimit}
+          fileCount={files.length}
+          fileLimit={fileLimit}
+          storageLoading={loading}
         />
 
-        {/* Main content + Activity panel */}
+        {/* Main content + side panels */}
         <div className="flex-1 min-w-0 flex gap-4 sm:gap-6">
-        <main className="flex-1 min-w-0 space-y-4 sm:space-y-5 pb-24 lg:pb-0">
+        <main className="flex-1 min-w-0 space-y-3 sm:space-y-4 pb-24 lg:pb-0">
 
-          {/* [P6-1] Post-upgrade confirmation — shown once after checkout redirect */}
+          {/* [P6-1] Post-upgrade confirmation */}
           <UpgradeBanner user={user} />
 
-          {/* [P6-2] First-use onboarding — shown once to new users */}
+          {/* [P18] Trial banners — shown for trial and trial_expired plans */}
+          {user && <TrialBanner user={user} onUpgrade={handleUpgrade} />}
+          {user && <TrialExpiredBanner user={user} onUpgrade={handleUpgrade} />}
+
+          {/* [P6-2] First-use onboarding */}
           {!loading && files.length === 0 && <OnboardingBanner />}
 
-          {/* Storage */}
-          <StorageBar
-            used={storageUsed}
-            limit={storageLimit}
+          {/* [P17-4] Invisible FileUploader — full-page drop target + progress toasts */}
+          <FileUploader
+            onUploadComplete={() => {
+              fetchAll()
+            }}
             plan={user?.plan ?? "free"}
-            fileCount={files.length}
-            fileLimit={fileLimit}
-            loading={loading}
+            currentFolderId={currentFolderId}
+            currentFolder={currentFolder}
+            uploadTriggerRef={uploadTriggerRef}
           />
 
-          {/* [P6-2] Decay explainer — collapsible, always available */}
-          {!loading && <DecayExplainer plan={user?.plan ?? "free"} />}
+          {/* ── Toolbar: breadcrumb + upload + decay picker + view toggle + panel toggles ── */}
+          <div className="flex items-center gap-2 flex-wrap">
 
-          {/* Breadcrumb + Activity toggle */}
-          <div className="flex items-center justify-between gap-2">
-            <nav className="flex items-center gap-1.5 text-sm flex-wrap flex-1 min-w-0">
+            {/* Breadcrumb */}
+            <nav className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
               {currentFolderId && (
                 <button
                   onClick={() => navigateTo(folderPath.length - 2)}
                   className="lg:hidden flex items-center gap-1 text-xs px-2 py-1 rounded-lg mr-1"
-                  style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text-muted)",
-                  }}
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
                   aria-label="Go back"
                 >
                   <ArrowLeftIcon className="w-3.5 h-3.5" /> Back
@@ -259,21 +327,19 @@ function DashboardPage() {
               )}
               <button
                 onClick={() => navigateTo(-1)}
-                className="flex items-center gap-1.5 transition-colors font-medium"
+                className="flex items-center gap-1.5 transition-colors font-medium shrink-0"
                 style={{ color: currentFolderId ? "var(--text-muted)" : "var(--text)" }}
               >
                 <HomeIcon className="w-3.5 h-3.5" />
-                My Files
+                <span className="hidden sm:inline">My Files</span>
               </button>
               {folderPath.map((folder, i) => (
-                <span key={folder.id} className="flex items-center gap-1.5">
-                  <ChevronRightIcon className="w-3.5 h-3.5" style={{ color: "var(--text-dim)" }} />
+                <span key={folder.id} className="flex items-center gap-1.5 min-w-0">
+                  <ChevronRightIcon className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-dim)" }} />
                   <button
                     onClick={() => navigateTo(i)}
-                    className="transition-colors font-medium truncate max-w-[120px] sm:max-w-none"
-                    style={{
-                      color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)",
-                    }}
+                    className="transition-colors font-medium truncate max-w-[100px] sm:max-w-[180px]"
+                    style={{ color: i === folderPath.length - 1 ? "var(--text)" : "var(--text-muted)" }}
                   >
                     {folder.name}
                   </button>
@@ -281,12 +347,44 @@ function DashboardPage() {
               ))}
             </nav>
 
-            {/* [P8-1] Activity toggle button — Starter + Pro */}
+            {/* [P17-5] Upload button — primary action */}
+            <button
+              onClick={() => uploadTriggerRef.current?.()}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg shrink-0 transition-opacity hover:opacity-90"
+              style={{ background: "var(--accent)", color: "#000" }}
+            >
+              <UploadCloudIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Upload</span>
+            </button>
+
+            {/* Divider */}
+            <div className="w-px h-5 shrink-0" style={{ background: "var(--border)" }} />
+
+            {/* View toggle — cycles grid → list → preview */}
+            <button
+              onClick={toggleViewMode}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{
+                background: viewMode === "preview" ? "var(--accent-dim)" : "var(--bg-card)",
+                border: `1px solid ${viewMode === "preview" ? "var(--accent)" : "var(--border)"}`,
+                color: viewMode === "preview" ? "var(--accent)" : "var(--text-muted)",
+              }}
+              title={viewMode === "grid" ? "Switch to list view" : viewMode === "list" ? "Switch to preview mode" : "Switch to grid view"}
+              aria-label={viewMode === "grid" ? "List view" : viewMode === "list" ? "Preview mode" : "Grid view"}
+            >
+              {viewMode === "grid"
+                ? <ListIcon className="w-3.5 h-3.5" />
+                : viewMode === "list"
+                ? <ImageIcon className="w-3.5 h-3.5" />
+                : <LayoutGridIcon className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* [P8-1] Activity toggle — Starter + Pro */}
             {(user?.plan === "starter" || user?.plan === "pro") && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => { setActivityOpen((o) => !o); setAnalyticsOpen(false) }}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg shrink-0 transition-colors"
                   style={{
                     background: activityOpen ? "var(--accent-dim)" : "var(--bg-card)",
                     border: `1px solid ${activityOpen ? "var(--accent)" : "var(--border)"}`,
@@ -296,56 +394,39 @@ function DashboardPage() {
                   <HistoryIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Activity</span>
                 </button>
-                <HelpTooltip
-                  content="A record of every decay event, warning, renewal, and deletion on your files. Export as CSV on Pro."
-                  guideAnchor="starter"
-                  position="bottom"
-                />
               </div>
             )}
-            {/* [P9-3] Analytics toggle button — Pro only */}
+
+            {/* [P9-3] Analytics toggle — Pro */}
             {user?.plan === "pro" && (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => { setAnalyticsOpen((o) => !o); setActivityOpen(false) }}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
-                  style={{
-                    background: analyticsOpen ? "var(--accent-dim)" : "var(--bg-card)",
-                    border: `1px solid ${analyticsOpen ? "var(--accent)" : "var(--border)"}`,
-                    color: analyticsOpen ? "var(--accent)" : "var(--text-muted)",
-                  }}
-                >
-                  <BarChart2Icon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Analytics</span>
-                </button>
-                <HelpTooltip
-                  content="View your 30-day storage trend, decay health distribution, and top-renewed files."
-                  guideAnchor="pro"
-                  position="bottom"
-                />
-              </div>
+              <button
+                onClick={() => { setAnalyticsOpen((o) => !o); setActivityOpen(false) }}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg shrink-0 transition-colors"
+                style={{
+                  background: analyticsOpen ? "var(--accent-dim)" : "var(--bg-card)",
+                  border: `1px solid ${analyticsOpen ? "var(--accent)" : "var(--border)"}`,
+                  color: analyticsOpen ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                <BarChart2Icon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Analytics</span>
+              </button>
             )}
-            {/* [P11] API Keys toggle button — Pro only */}
+
+            {/* [P11] API Keys toggle — Pro */}
             {user?.plan === "pro" && (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setApiKeysOpen((o) => !o)}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors"
-                  style={{
-                    background: apiKeysOpen ? "var(--accent-dim)" : "var(--bg-card)",
-                    border: `1px solid ${apiKeysOpen ? "var(--accent)" : "var(--border)"}`,
-                    color: apiKeysOpen ? "var(--accent)" : "var(--text-muted)",
-                  }}
-                >
-                  <KeyIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">API Keys</span>
-                </button>
-                <HelpTooltip
-                  content="Generate API keys to access your files programmatically from scripts or CI pipelines."
-                  guideAnchor="pro"
-                  position="bottom"
-                />
-              </div>
+              <button
+                onClick={() => setApiKeysOpen((o) => !o)}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg shrink-0 transition-colors"
+                style={{
+                  background: apiKeysOpen ? "var(--accent-dim)" : "var(--bg-card)",
+                  border: `1px solid ${apiKeysOpen ? "var(--accent)" : "var(--border)"}`,
+                  color: apiKeysOpen ? "var(--accent)" : "var(--text-muted)",
+                }}
+              >
+                <KeyIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">API Keys</span>
+              </button>
             )}
           </div>
 
@@ -353,51 +434,22 @@ function DashboardPage() {
           {fetchError && !loading && (
             <div
               className="rounded-xl p-4 sm:p-5 flex items-center gap-4"
-              style={{
-                background: "rgba(239,68,68,0.06)",
-                border: "1px solid rgba(239,68,68,0.3)",
-              }}
+              style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)" }}
             >
               <AlertTriangleIcon className="w-5 h-5 shrink-0" style={{ color: "#ef4444" }} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color: "#ef4444" }}>
-                  Failed to load your files
-                </p>
-                <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
-                  {fetchError}
-                </p>
+                <p className="text-sm font-medium" style={{ color: "#ef4444" }}>Failed to load your files</p>
+                <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>{fetchError}</p>
               </div>
               <button
                 onClick={fetchAll}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0"
-                style={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-muted)",
-                }}
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
               >
                 <RefreshCwIcon className="w-3.5 h-3.5" /> Retry
               </button>
             </div>
           )}
-
-          {/* Uploader */}
-          <FileUploader
-            onUploadComplete={() => {
-              fetchAll()
-              pushToast({
-                id: `upload-done-${Date.now()}`,
-                severity: "success",
-                title: "Upload complete",
-                body: "Your file was uploaded successfully.",
-                autoDismissMs: 4000,
-              })
-            }}
-            plan={user?.plan ?? "free"}
-            currentFolderId={currentFolderId}
-            currentFolder={currentFolder}
-            uploadTriggerRef={uploadTriggerRef}
-          />
 
           {/* File grid */}
           {loading ? (
@@ -406,12 +458,7 @@ function DashboardPage() {
                 <div
                   key={i}
                   className="rounded-xl animate-pulse"
-                  style={{
-                    height: "160px",
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border)",
-                    animationDelay: `${i * 60}ms`,
-                  }}
+                  style={{ height: "160px", background: "var(--bg-card)", border: "1px solid var(--border)", animationDelay: `${i * 60}ms` }}
                 />
               ))}
             </div>
@@ -421,7 +468,7 @@ function DashboardPage() {
               folders={visibleFolders}
               allFolders={folders}
               currentFolderId={currentFolderId}
-              userPlan={user?.plan ?? "free"}
+              userPlan={(user?.plan === "trial" || user?.plan === "trial_expired" ? "pro" : user?.plan) ?? "free"}
               onRefresh={fetchAll}
               onOpenFolder={openFolder}
               onRenewedToast={(filename) =>
@@ -434,56 +481,94 @@ function DashboardPage() {
                 })
               }
               renewFileRef={renewFileRef}
+              previewFileRef={previewFileRef}
+              downloadFileRef={downloadFileRef}
               searchInputRef={searchInputRef}
+              onTriggerUpload={() => uploadTriggerRef.current?.()}
+              viewMode={viewMode as "grid" | "list" | "preview"}
             />
           )}
 
-          {/* [P11] API Keys panel — Pro only, collapsible */}
-          {user?.plan === "pro" && apiKeysOpen && (
-            <ApiKeysPanel isPro={true} />
-          )}
         </main>
-
-        {/* [P8-1] Activity panel — inline on desktop */}
-        {activityOpen && (
-          <div className="hidden lg:block w-[420px] shrink-0">
-            <ActivityPanel
-              plan={user?.plan ?? "free"}
-              isOpen={activityOpen}
-              onClose={() => setActivityOpen(false)}
-            />
-          </div>
-        )}
-        {/* [P9-3] Analytics panel — inline on desktop, Pro only */}
-        {analyticsOpen && (
-          <div className="hidden lg:block w-[360px] shrink-0">
-            <AnalyticsPanel
-              plan={user?.plan ?? "free"}
-              isOpen={analyticsOpen}
-              onClose={() => setAnalyticsOpen(false)}
-            />
-          </div>
-        )}
         </div>
       </div>
 
-      {/* [P8-1] Activity panel mobile drawer */}
-      <div className="lg:hidden">
-        <ActivityPanel
-          plan={user?.plan ?? "free"}
-          isOpen={activityOpen}
-          onClose={() => setActivityOpen(false)}
-        />
-      </div>
+      {/* [P18] Activity modal */}
+      {activityOpen && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+          onClick={() => setActivityOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
+            style={{ height: "min(640px, 88svh)", background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ErrorBoundary>
+              <ActivityPanel
+                plan={user?.plan ?? "free"}
+                isOpen={activityOpen}
+                onClose={() => setActivityOpen(false)}
+              />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
 
-      {/* [P9-3] Analytics panel mobile drawer — Pro only */}
-      <div className="lg:hidden">
-        <AnalyticsPanel
-          plan={user?.plan ?? "free"}
-          isOpen={analyticsOpen}
-          onClose={() => setAnalyticsOpen(false)}
-        />
-      </div>
+      {/* [P18] Analytics modal */}
+      {analyticsOpen && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+          onClick={() => setAnalyticsOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+            style={{ height: "min(600px, 88svh)", background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ErrorBoundary>
+              <AnalyticsPanel
+                plan={(user?.plan === "trial" || user?.plan === "trial_expired" ? "pro" : user?.plan) ?? "free"}
+                isOpen={analyticsOpen}
+                onClose={() => setAnalyticsOpen(false)}
+                files={files}
+                onRenew={handleRenewFile}
+                onDownload={handleDownloadFile}
+                onPreview={(file) => { handlePreviewFile(file); setAnalyticsOpen(false) }}
+              />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
+
+      {/* [P18] API Keys modal */}
+      {apiKeysOpen && user?.plan === "pro" && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+          onClick={() => setApiKeysOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
+            style={{ maxHeight: "88svh", background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
+              <p className="text-sm font-semibold" style={{ fontFamily: "Syne, sans-serif" }}>API Keys</p>
+              <button onClick={() => setApiKeysOpen(false)} className="action-btn p-1.5 rounded-lg" aria-label="Close">
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <ErrorBoundary>
+                <ApiKeysPanel isPro={true} />
+              </ErrorBoundary>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile floating notification FAB */}
       <NotificationBell
@@ -525,11 +610,11 @@ function DashboardPage() {
             </div>
             <div className="space-y-2.5">
               {[
-                { key: "U",      desc: "Open file upload" },
-                { key: "N",      desc: "New folder" },
-                { key: "/",      desc: "Focus search" },
-                { key: "Esc",    desc: "Close panels / modals" },
-                { key: "?",      desc: "Toggle this reference" },
+                { key: "U",   desc: "Open file upload" },
+                { key: "N",   desc: "New folder" },
+                { key: "/",   desc: "Focus search" },
+                { key: "Esc", desc: "Close panels / modals" },
+                { key: "?",   desc: "Toggle this reference" },
               ].map(({ key, desc }) => (
                 <div key={key} className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "var(--text-muted)" }}>{desc}</span>
