@@ -24,6 +24,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/waitlist(.*)",  // [P18] join + count are public
   "/signed-out",                      // [P19] post-deletion landing — runs cookie purge, no session needed
   "/api/account/clear-session",       // [P19] expires HttpOnly Clerk cookies — intentionally unauthenticated
+  // [ADMIN] Secret-gated admin pages — no Clerk session, protected by ADMIN_SECRET bearer token
+  "/admin(.*)",
+  "/api/admin(.*)",
 ])
 
 export default clerkMiddleware(async (auth, req) => {

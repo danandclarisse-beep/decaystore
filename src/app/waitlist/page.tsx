@@ -87,7 +87,14 @@ export default function WaitlistPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="flex-1 px-4 py-2.5 rounded-lg border text-sm"
-              style={{ borderColor: "var(--border)" }}
+              style={{
+                borderColor: "var(--border)",
+                // ✅ FIX: Explicit color + background so the input is always legible
+                // regardless of whether the browser's default input styling overrides
+                // the inherited CSS variables.
+                color: "var(--text)",
+                background: "var(--bg-card)",
+              }}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             />
             <button
