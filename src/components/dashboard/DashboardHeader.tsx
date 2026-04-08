@@ -81,11 +81,14 @@ export function DashboardHeader({
     window.location.href = href
   }
 
-  const planBadge = {
-    free: { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
-    starter: { bg: "rgba(59,130,246,0.12)", color: "#60a5fa" },
-    pro: { bg: "rgba(245,166,35,0.12)", color: "var(--accent)" },
-  }[user?.plan ?? "free"]
+  const planBadge = ({
+    free:          { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
+    starter:       { bg: "rgba(59,130,246,0.12)",  color: "#60a5fa"           },
+    pro:           { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)"     },
+    trial:         { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)"     },
+    trial_expired: { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
+  } as Record<string, { bg: string; color: string }>)[user?.plan ?? "free"]
+    ?? { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }
 
   const firstName = user
     ? (() => {
