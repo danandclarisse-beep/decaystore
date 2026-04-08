@@ -10,9 +10,9 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 
 function emailHeader() {
   return `
-    <div style="border-bottom: 2px solid #f5a623; padding-bottom: 16px; margin-bottom: 32px;">
-      <span style="font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0a0a0b;">
-        Decay<span style="color: #f5a623;">Store</span>
+    <div style="border-bottom: 2px solid #14b8a6; padding-bottom: 16px; margin-bottom: 32px;">
+      <span style="font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0f1419;">
+        Decay<span style="color: #14b8a6;">Store</span>
       </span>
     </div>
   `
@@ -31,7 +31,7 @@ function emailFooter(appUrl: string) {
 
 function ctaButton(href: string, label: string) {
   return `
-    <a href="${href}" style="display: inline-block; background: #f5a623; color: #000;
+    <a href="${href}" style="display: inline-block; background: #14b8a6; color: #fff;
        padding: 12px 24px; border-radius: 6px; text-decoration: none;
        font-weight: 600; font-size: 14px;">
       ${label}
@@ -52,7 +52,7 @@ export async function sendDecayWarningEmail(
       ? `⚠️ Final warning: "${filename}" deletes in ${daysLeft} days`
       : `Your file "${filename}" is decaying — ${daysLeft} days left`
 
-  const accentColor = level === "critical" ? "#ef4444" : "#f5a623"
+  const accentColor = level === "critical" ? "#ef4444" : "#14b8a6"
   const urgency     = level === "critical" ? "FINAL WARNING" : "Heads up"
 
   await resend.emails.send({
@@ -161,7 +161,7 @@ export async function sendWeeklyDigestEmail(
       const daysLeft = Math.max(0, Math.floor((1 - f.liveDecayScore) * f.decayRateDays))
       const barColor = f.liveDecayScore >= 0.9  ? "#ef4444"
                      : f.liveDecayScore >= 0.75 ? "#f97316"
-                     : "#f5a623"
+                     : "#14b8a6"
       const renewUrl = signedRenewUrl(f.id)
       return `
         <tr style="border-bottom: 1px solid #f0f0f0;">
@@ -175,7 +175,7 @@ export async function sendWeeklyDigestEmail(
             ${daysLeft}d left
           </td>
           <td style="padding: 10px 0; padding-left: 16px;">
-            <a href="${renewUrl}" style="display: inline-block; background: #f5a623; color: #000;
+            <a href="${renewUrl}" style="display: inline-block; background: #14b8a6; color: #fff;
                padding: 6px 14px; border-radius: 5px; text-decoration: none;
                font-size: 12px; font-weight: 600;">
               Renew
@@ -378,8 +378,8 @@ export async function sendTrialWarningEmail(email: string, daysLeft: number) {
       <html>
       <body style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
         ${emailHeader()}
-        <div style="border-left: 4px solid #f5a623; padding-left: 20px; margin-bottom: 32px;">
-          <p style="font-size: 12px; font-weight: 600; color: #f5a623; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px;">
+        <div style="border-left: 4px solid #14b8a6; padding-left: 20px; margin-bottom: 32px;">
+          <p style="font-size: 12px; font-weight: 600; color: #14b8a6; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px;">
             ${isFinal ? "FINAL WARNING" : "TRIAL ENDING SOON"}
           </p>
           <h1 style="font-size: 22px; font-weight: 600; margin: 0;">

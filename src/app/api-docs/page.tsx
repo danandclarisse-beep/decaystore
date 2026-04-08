@@ -36,8 +36,8 @@ function Endpoint({
   method, path, description,
 }: { method: string; path: string; description: string }) {
   const methodColors: Record<string, string> = {
-    GET:    "#34d399",
-    POST:   "#60a5fa",
+    GET:    "#10b981",
+    POST:   "#14b8a6",
     PATCH:  "#f97316",
     DELETE: "#ef4444",
   }

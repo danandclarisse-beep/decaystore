@@ -511,11 +511,11 @@ export function FileGrid({
         {!currentFolderId && (
           <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: "var(--text-dim)" }}>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ background: "#22c55e" }} /> Fresh
+              <span className="w-2 h-2 rounded-full" style={{ background: "#10b981" }} /> Fresh
             </span>
             <span>→</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ background: "#eab308" }} /> Stale
+              <span className="w-2 h-2 rounded-full" style={{ background: "#14b8a6" }} /> Stale
             </span>
             <span>→</span>
             <span className="flex items-center gap-1.5">
@@ -778,7 +778,7 @@ export function FileGrid({
                         onClick={(e) => { e.stopPropagation(); handleRenew(file.id) }}
                         disabled={isRenewing || isRenewed}
                         className="p-2 rounded-xl transition-colors disabled:opacity-50"
-                        style={{ background: "rgba(52,211,153,0.3)", color: "#34d399" }}
+                        style={{ background: "rgba(52,211,153,0.3)", color: "#10b981" }}
                         title="Renew"
                       >
                         {isRenewed ? <CheckIcon className="w-4 h-4" /> : <RefreshCwIcon className="w-4 h-4" />}
@@ -838,7 +838,7 @@ export function FileGrid({
                     <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "var(--bg-elevated)" }}>
                       <div
                         className={`h-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
-                        style={{ width: isRenewed ? "0%" : `${liveDecayScore * 100}%`, background: isRenewed ? "#34d399" : decayColor }}
+                        style={{ width: isRenewed ? "0%" : `${liveDecayScore * 100}%`, background: isRenewed ? "#10b981" : decayColor }}
                       />
                     </div>
                   </div>
@@ -870,7 +870,7 @@ export function FileGrid({
                         </p>
                       )}
                       <p className="text-xs truncate" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace", fontSize: "10px" }}>
-                        {formatBytes(file.sizeBytes)} · <span style={{ color: isRenewed ? "#34d399" : decayColor }}>{isRenewed ? "Renewed!" : timeLeft + " left"}</span>
+                        {formatBytes(file.sizeBytes)} · <span style={{ color: isRenewed ? "#10b981" : decayColor }}>{isRenewed ? "Renewed!" : timeLeft + " left"}</span>
                       </p>
                     </div>
                   </div>
@@ -948,7 +948,7 @@ export function FileGrid({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   {isRenewed ? (
-                    <span className="text-xs font-semibold flex items-center gap-1" style={{ color: "#34d399" }}>
+                    <span className="text-xs font-semibold flex items-center gap-1" style={{ color: "#10b981" }}>
                       <CheckIcon className="w-3 h-3" /> Renewed!
                     </span>
                   ) : (
@@ -970,7 +970,7 @@ export function FileGrid({
                     className={`h-full rounded-full transition-all duration-700${isCritical && !isRenewed ? " animate-pulse-slow" : ""}`}
                     style={{
                       width: isRenewed ? "0%" : `${liveDecayScore * 100}%`,
-                      background: isRenewed ? "#34d399" : decayColor,
+                      background: isRenewed ? "#10b981" : decayColor,
                     }}
                   />
                 </div>
@@ -1018,7 +1018,7 @@ export function FileGrid({
                     title="Renew"
                   >
                     {isRenewing ? (
-                      <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#34d399" }} />
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#10b981" }} />
                     ) : (
                       <RefreshCwIcon className="w-3.5 h-3.5" />
                     )}
@@ -1110,7 +1110,7 @@ export function FileGrid({
                     {isRenewing ? (
                       <div
                         className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
-                        style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#34d399" }}
+                        style={{ borderColor: "rgba(52,211,153,0.3)", borderTopColor: "#10b981" }}
                       />
                     ) : isRenewed ? (
                       <CheckIcon className="w-3.5 h-3.5 shrink-0" />
@@ -1650,7 +1650,7 @@ export function FileGrid({
                 <span className="capitalize px-2 py-0.5 rounded-full text-xs font-semibold"
                   style={{
                     background: detailsFile.status === "active" ? "rgba(52,211,153,0.12)" : detailsFile.status === "critical" ? "rgba(239,68,68,0.12)" : "rgba(249,115,22,0.12)",
-                    color: detailsFile.status === "active" ? "#34d399" : detailsFile.status === "critical" ? "#ef4444" : "#f97316",
+                    color: detailsFile.status === "active" ? "#10b981" : detailsFile.status === "critical" ? "#ef4444" : "#f97316",
                   }}
                 >{detailsFile.status}</span>
               } />
@@ -1671,7 +1671,7 @@ export function FileGrid({
                       className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold transition-colors disabled:opacity-60"
                       style={{
                         background: detailsFile.isPublic ? "rgba(52,211,153,0.12)" : "var(--bg-hover)",
-                        color: detailsFile.isPublic ? "#34d399" : "var(--text-muted)",
+                        color: detailsFile.isPublic ? "#10b981" : "var(--text-muted)",
                         border: `1px solid ${detailsFile.isPublic ? "rgba(52,211,153,0.3)" : "var(--border)"}`,
                       }}
                     >
@@ -1682,7 +1682,7 @@ export function FileGrid({
                       <button
                         onClick={() => copyShareLink(detailsFile.id)}
                         className="flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-colors"
-                        style={{ background: "var(--bg-hover)", color: copiedLink ? "#34d399" : "var(--text-muted)", border: "1px solid var(--border)" }}
+                        style={{ background: "var(--bg-hover)", color: copiedLink ? "#10b981" : "var(--text-muted)", border: "1px solid var(--border)" }}
                       >
                         {copiedLink ? <CheckIcon className="w-3 h-3" /> : <LinkIcon className="w-3 h-3" />}
                         {copiedLink ? "Copied!" : "Copy link"}

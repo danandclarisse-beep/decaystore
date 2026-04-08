@@ -86,7 +86,7 @@ export function TrialRedirectOverlay({ visible }: Props) {
                   active
                     ? "rgba(245,166,35,0.4)"
                     : done
-                    ? "rgba(245,166,35,0.2)"
+                    ? "rgba(20, 184, 166, 0.2)"
                     : "var(--border)"
                 }`,
                 opacity: pending ? 0.4 : 1,

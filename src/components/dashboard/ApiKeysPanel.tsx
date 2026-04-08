@@ -141,9 +141,9 @@ export function ApiKeysPanel({ isPro }: Props) {
           style={{ background: "rgba(52,211,153,0.07)", border: "1px solid rgba(52,211,153,0.25)" }}
         >
           <div className="flex items-start gap-2 mb-2">
-            <CheckIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#34d399" }} />
+            <CheckIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#10b981" }} />
             <div>
-              <p className="text-xs font-semibold" style={{ color: "#34d399" }}>
+              <p className="text-xs font-semibold" style={{ color: "#10b981" }}>
                 API key created — copy it now
               </p>
               <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
@@ -173,7 +173,7 @@ export function ApiKeysPanel({ isPro }: Props) {
               className="flex items-center gap-1 text-xs px-2 py-1 rounded-md shrink-0 font-semibold transition-colors"
               style={{
                 background: copied ? "rgba(52,211,153,0.15)" : "var(--bg-hover)",
-                color:      copied ? "#34d399" : "var(--text-muted)",
+                color:      copied ? "#10b981" : "var(--text-muted)",
                 border:     "1px solid var(--border)",
               }}
             >

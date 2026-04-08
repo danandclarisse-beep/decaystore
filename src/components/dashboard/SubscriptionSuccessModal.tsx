@@ -244,13 +244,13 @@ export function SubscriptionSuccessModal({ user: initialUser }: Props) {
           {/* Feature bullets */}
           <div
             className="rounded-xl p-4 mb-6 space-y-2.5"
-            style={{ background: "rgba(245,166,35,0.05)", border: "1px solid rgba(245,166,35,0.15)" }}
+            style={{ background: "rgba(245,166,35,0.05)", border: "1px solid rgba(20,184,166,0.15)" }}
           >
             {meta.highlights.map(({ icon: Icon, text }) => (
               <div key={text} className="flex items-center gap-3">
                 <div
                   className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: "rgba(245,166,35,0.15)" }}
+                  style={{ background: "rgba(20,184,166,0.15)" }}
                 >
                   <Icon className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
                 </div>

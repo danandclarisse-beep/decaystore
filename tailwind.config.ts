@@ -49,9 +49,9 @@ module.exports = {
           foreground: "hsl(var(--card-foreground))",
         },
         decay: {
-          0: "#22c55e",
+          0: "#10b981",
           25: "#84cc16",
-          50: "#eab308",
+          50: "#14b8a6",
           75: "#f97316",
           100: "#ef4444",
         },

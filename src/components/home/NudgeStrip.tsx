@@ -44,7 +44,7 @@ export function NudgeStrip({ plan, nextPlan }: Props) {
       className="flex items-center justify-between gap-4 px-6 py-2.5 text-xs"
       style={{
         background: "var(--accent-dim)",
-        borderBottom: "1px solid rgba(245,166,35,0.15)",
+        borderBottom: "1px solid rgba(20,184,166,0.15)",
       }}
     >
       <div className="flex items-center gap-3 min-w-0">

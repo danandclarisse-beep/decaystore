@@ -40,7 +40,7 @@ export default function TermsPage() {
               Files that are not accessed within a plan-defined window are automatically and
               permanently deleted. This is a core feature, not a bug.
             </p>
-            <p className="mt-3 p-4 rounded-xl font-medium" style={{ background: "rgba(245,166,35,0.08)", border: "1px solid rgba(245,166,35,0.2)", color: "var(--accent)" }}>
+            <p className="mt-3 p-4 rounded-xl font-medium" style={{ background: "rgba(20, 184, 166, 0.08)", border: "1px solid rgba(20, 184, 166, 0.2)", color: "var(--accent)" }}>
               ⚠️ Important: Deleted files cannot be recovered. You are solely responsible for
               maintaining backups of any files you upload to the Service.
             </p>

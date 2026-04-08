@@ -12,9 +12,11 @@ export const DECAY_THRESHOLDS = {
 
 // ─── Per-plan decay rates (days until fully decayed) ──────
 export const PLAN_DECAY_RATES = {
-  free: 14,
-  starter: 30,
-  pro: 90,
+  free:          14,
+  starter:       30,
+  pro:           90,
+  trial:         90,  // [FIX] Trial users get Pro-equivalent decay rate
+  trial_expired: 90,  // Keeps type safety for expired trial files already in DB
 } as const
 
 // ─── Calculate current decay score ────────────────────────
@@ -32,9 +34,9 @@ export function calculateDecayScore(
 
 // ─── Get decay color for UI ───────────────────────────────
 export function getDecayColor(score: number): string {
-  if (score < 0.25) return "#22c55e"
+  if (score < 0.25) return "#10b981"
   if (score < 0.5) return "#84cc16"
-  if (score < 0.75) return "#eab308"
+  if (score < 0.75) return "#14b8a6"
   if (score < 0.9) return "#f97316"
   return "#ef4444"
 }

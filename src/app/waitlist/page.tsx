@@ -72,7 +72,7 @@ export default function WaitlistPage() {
         {status === "success" ? (
           <div
             className="p-4 rounded-xl border"
-            style={{ borderColor: "var(--accent)", background: "rgba(245,166,35,0.06)" }}
+            style={{ borderColor: "var(--accent)", background: "rgba(20,184,166,0.06)" }}
           >
             <p className="font-semibold">You're #{position} in the queue</p>
             <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>

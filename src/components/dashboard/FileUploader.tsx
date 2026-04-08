@@ -303,7 +303,7 @@ export function FileUploader({ onUploadComplete, plan, currentFolderId, currentF
             >
               <div className="flex items-center gap-2.5">
                 {u.status === "done" ? (
-                  <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#34d399" }} />
+                  <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#10b981" }} />
                 ) : u.status === "error" ? (
                   <XCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />
                 ) : (

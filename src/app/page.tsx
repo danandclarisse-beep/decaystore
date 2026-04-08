@@ -17,8 +17,8 @@ import { NudgeStrip } from "@/components/home/NudgeStrip"
 
 // ─── Static decay demo (shown to anonymous visitors or users with no files) ───
 const DEMO_FILES = [
-  { name: "project-brief.pdf", score: 0.05, label: "Fresh",    color: "#34d399", days: 28 },
-  { name: "old-mockups.fig",   score: 0.52, label: "Aging",    color: "#fbbf24", days: 14 },
+  { name: "project-brief.pdf", score: 0.05, label: "Fresh",    color: "#10b981", days: 28 },
+  { name: "old-mockups.fig",   score: 0.52, label: "Aging",    color: "#14b8a6", days: 14 },
   { name: "draft-v1.docx",     score: 0.78, label: "Critical", color: "#f97316", days: 6  },
   { name: "2021-receipts.zip", score: 0.96, label: "Expiring", color: "#ef4444", days: 1  },
 ] as const
@@ -167,7 +167,7 @@ export default async function HomePage() {
         <section className="relative overflow-hidden">
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none"
-            style={{ background: "radial-gradient(ellipse at center, rgba(245,166,35,0.08) 0%, transparent 70%)" }}
+            style={{ background: "radial-gradient(ellipse at center, rgba(20, 184, 166, 0.08) 0%, transparent 70%)" }}
           />
           <div className="max-w-5xl mx-auto px-6 pt-28 pb-24 text-center relative">
             <div
@@ -175,7 +175,7 @@ export default async function HomePage() {
               style={{
                 background: "var(--accent-dim)",
                 color: "var(--accent)",
-                border: "1px solid rgba(245,166,35,0.2)",
+                border: "1px solid rgba(20, 184, 166, 0.2)",
                 fontFamily: "DM Mono, monospace",
               }}
             >
@@ -239,8 +239,8 @@ export default async function HomePage() {
               )}
               <div className="flex gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#ef4444", opacity: 0.6 }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#fbbf24", opacity: 0.6 }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#34d399", opacity: 0.6 }} />
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#14b8a6", opacity: 0.6 }} />
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#10b981", opacity: 0.6 }} />
               </div>
             </div>
           </div>

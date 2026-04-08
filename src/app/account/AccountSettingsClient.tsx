@@ -20,9 +20,9 @@ interface Props {
 // with proper amber Pro styling instead of falling back to the free (grey) style.
 const PLAN_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   free:          { label: "Free",              color: "var(--text-muted)", bg: "rgba(255,255,255,0.06)" },
-  starter:       { label: "Starter",           color: "#60a5fa",          bg: "rgba(59,130,246,0.12)"  },
-  pro:           { label: "Pro",               color: "var(--accent)",    bg: "rgba(245,166,35,0.12)"  },
-  trial:         { label: "Pro Trial",         color: "var(--accent)",    bg: "rgba(245,166,35,0.12)"  },
+  starter:       { label: "Starter",           color: "#14b8a6",          bg: "rgba(20,184,166,0.12)"  },
+  pro:           { label: "Pro",               color: "var(--accent)",    bg: "rgba(20,184,166,0.12)"  },
+  trial:         { label: "Pro Trial",         color: "var(--accent)",    bg: "rgba(20,184,166,0.12)"  },
   trial_expired: { label: "Pro Trial (ended)", color: "var(--text-muted)", bg: "rgba(255,255,255,0.06)" },
 }
 
@@ -281,7 +281,7 @@ function handleDeleteAccount() {
             <p className="text-xs" style={{ color: "var(--text-dim)" }}>Saving…</p>
           )}
           {prefSaved && (
-            <p className="text-xs flex items-center gap-1" style={{ color: "#34d399" }}>
+            <p className="text-xs flex items-center gap-1" style={{ color: "#10b981" }}>
               <CheckIcon className="w-3 h-3" /> Saved
             </p>
           )}

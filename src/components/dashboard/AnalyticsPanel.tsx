@@ -321,7 +321,7 @@ export function AnalyticsPanel({ plan, isOpen, onClose, files = [], onRenew, onD
                               </button>
                             )}
                             {onRenew && (
-                              <button onClick={() => onRenew(fullFile.id)} className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-hover)]" style={{ color: "#34d399" }} title="Renew">
+                              <button onClick={() => onRenew(fullFile.id)} className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-hover)]" style={{ color: "#10b981" }} title="Renew">
                                 <RefreshCwIcon className="w-3.5 h-3.5" />
                               </button>
                             )}

@@ -47,7 +47,7 @@ export function PersonalisedHero({
 
   const healthColor =
     needsAttention === 0 ? "var(--decay-fresh)" :
-    needsAttention <= 2  ? "#fbbf24" :
+    needsAttention <= 2  ? "#14b8a6" :
     "#ef4444"
 
   return (
@@ -55,7 +55,7 @@ export function PersonalisedHero({
       {/* Subtle glow */}
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[320px] pointer-events-none"
-        style={{ background: "radial-gradient(ellipse at center, rgba(245,166,35,0.06) 0%, transparent 70%)" }}
+        style={{ background: "radial-gradient(ellipse at center, rgba(20,184,166,0.06) 0%, transparent 70%)" }}
       />
 
       <div className="max-w-5xl mx-auto px-6 pt-20 pb-16 relative">
@@ -66,7 +66,7 @@ export function PersonalisedHero({
             style={{
               background: "var(--accent-dim)",
               color: "var(--accent)",
-              border: "1px solid rgba(245,166,35,0.2)",
+              border: "1px solid rgba(20, 184, 166, 0.2)",
               fontFamily: "DM Mono, monospace",
             }}
           >

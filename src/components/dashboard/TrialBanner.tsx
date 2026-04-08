@@ -35,7 +35,7 @@ export function TrialBanner({ user, onUpgrade }: Props) {
     <div
       className="rounded-2xl p-4 mb-4 flex items-center gap-3"
       style={{
-        background: "rgba(245,166,35,0.06)",
+        background: "rgba(20,184,166,0.06)",
         border: "1px solid rgba(245,166,35,0.3)",
       }}
     >

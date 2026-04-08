@@ -61,7 +61,7 @@ function IntentBanner() {
             <div key={step} className="flex items-center gap-2.5 text-xs" style={{ color: "var(--text-muted)" }}>
               <span
                 className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
-                style={{ background: "rgba(245,166,35,0.2)", color: "var(--accent)" }}
+                style={{ background: "rgba(20, 184, 166, 0.2)", color: "var(--accent)" }}
               >
                 {step}
               </span>
@@ -71,7 +71,7 @@ function IntentBanner() {
         </div>
 
         {/* Reassurance */}
-        <div className="flex items-center gap-1.5 mt-3 pt-3" style={{ borderTop: "1px solid rgba(245,166,35,0.15)" }}>
+        <div className="flex items-center gap-1.5 mt-3 pt-3" style={{ borderTop: "1px solid rgba(20,184,166,0.15)" }}>
           <ShieldCheckIcon className="w-3 h-3 shrink-0" style={{ color: "var(--text-dim)" }} />
           <p className="text-[11px]" style={{ color: "var(--text-dim)" }}>
             Cancel anytime from Account settings. No charge before your trial ends.

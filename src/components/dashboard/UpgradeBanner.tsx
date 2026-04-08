@@ -77,7 +77,7 @@ export function UpgradeBanner({ user }: Props) {
     <div
       className="rounded-2xl p-5 sm:p-6 mb-4"
       style={{
-        background: "linear-gradient(135deg, rgba(245,166,35,0.08) 0%, rgba(245,166,35,0.03) 100%)",
+        background: "linear-gradient(135deg, rgba(20, 184, 166, 0.08) 0%, rgba(245,166,35,0.03) 100%)",
         border:     "1px solid rgba(245,166,35,0.35)",
       }}
     >

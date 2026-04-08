@@ -9,9 +9,9 @@ import type { PlanKey } from "@/lib/plans"
 // ── Plan badge component ─────────────────────────────────────────────────────
 function PlanBadge({ plans }: { plans: string[] }) {
   const colorMap: Record<string, { bg: string; text: string }> = {
-    "All":     { bg: "rgba(245,166,35,0.12)",  text: "#f5a623" },
-    "Starter": { bg: "rgba(52,211,153,0.12)",  text: "#34d399" },
-    "Pro":     { bg: "rgba(147,197,253,0.15)", text: "#60a5fa" },
+    "All":     { bg: "rgba(20,184,166,0.12)",  text: "#14b8a6" },
+    "Starter": { bg: "rgba(16,185,129,0.12)",  text: "#10b981" },
+    "Pro":     { bg: "rgba(20,184,166,0.12)", text: "#14b8a6" },
   }
   return (
     <div className="flex gap-1.5 flex-wrap">
@@ -84,9 +84,9 @@ function Code({ children }: { children: React.ReactNode }) {
 // ── Decay colour scale visual ────────────────────────────────────────────────
 function DecayScale() {
   const stops = [
-    { label: "Fresh",    pct: 12,  color: "#34d399", range: "0–25%" },
+    { label: "Fresh",    pct: 12,  color: "#10b981", range: "0–25%" },
     { label: "Aging",    pct: 37,  color: "#84cc16", range: "25–50%" },
-    { label: "Stale",    pct: 62,  color: "#fbbf24", range: "50–75%" },
+    { label: "Stale",    pct: 62,  color: "#14b8a6", range: "50–75%" },
     { label: "Critical", pct: 82,  color: "#f97316", range: "75–90%" },
     { label: "Expiring", pct: 96,  color: "#ef4444", range: "90–100%" },
   ]
@@ -103,7 +103,7 @@ function DecayScale() {
         <div
           className="h-full rounded-full"
           style={{
-            background: "linear-gradient(to right, #34d399, #84cc16, #fbbf24, #f97316, #ef4444)",
+            background: "linear-gradient(to right, #10b981, #84cc16, #14b8a6, #f97316, #ef4444)",
             width: "100%",
           }}
         />
@@ -133,7 +133,7 @@ function DecayScale() {
 function EmailTimeline({ decayDays }: { decayDays: number }) {
   const events = [
     { pct: 0,   label: "Uploaded",        color: "var(--decay-fresh)" },
-    { pct: 50,  label: "Warning email",   color: "#fbbf24" },
+    { pct: 50,  label: "Warning email",   color: "#14b8a6" },
     { pct: 90,  label: "Critical email",  color: "#f97316" },
     { pct: 100, label: "Deleted",         color: "#ef4444" },
   ]
@@ -150,7 +150,7 @@ function EmailTimeline({ decayDays }: { decayDays: number }) {
         <div className="h-1 rounded-full mb-6" style={{ background: "var(--bg-hover)" }}>
           <div
             className="h-full rounded-full"
-            style={{ background: "linear-gradient(to right, #34d399, #ef4444)", width: "100%" }}
+            style={{ background: "linear-gradient(to right, #10b981, #ef4444)", width: "100%" }}
           />
         </div>
         {/* Markers */}
@@ -255,8 +255,8 @@ export default async function GuidePage() {
                 <div className="grid grid-cols-3 gap-3 mt-1">
                   {[
                     { plan: "Free",    days: 14,  color: "var(--text-muted)" },
-                    { plan: "Starter", days: 30,  color: "#34d399" },
-                    { plan: "Pro",     days: 90,  color: "#60a5fa" },
+                    { plan: "Starter", days: 30,  color: "#10b981" },
+                    { plan: "Pro",     days: 90,  color: "#14b8a6" },
                   ].map((p) => (
                     <div
                       key={p.plan}
@@ -282,7 +282,7 @@ export default async function GuidePage() {
                 </p>
                 <ul className="list-none space-y-1 mt-2">
                   <li className="flex items-start gap-2">
-                    <span style={{ color: "#fbbf24" }}>→</span>
+                    <span style={{ color: "#14b8a6" }}>→</span>
                     <span><strong>50% decayed</strong> — first warning, plenty of time to act.</span>
                   </li>
                   <li className="flex items-start gap-2">
@@ -331,7 +331,7 @@ export default async function GuidePage() {
               <FeatureBlock title="Reading the storage bar" plans={["All"]}>
                 <p>
                   The storage bar in the left sidebar shows how much of your plan&apos;s quota you&apos;ve used.
-                  The bar turns <span style={{ color: "#f97316" }}>orange</span> at 70% and <span style={{ color: "#ef4444" }}>red</span> at 90%.
+                  The bar turns <span style={{ color: "#f97316" }}>amber</span> at 70% and <span style={{ color: "#ef4444" }}>red</span> at 90%.
                   At 100%, new uploads are rejected until you free space by deleting files or upgrading.
                 </p>
                 <p>
@@ -449,8 +449,8 @@ export default async function GuidePage() {
                   are included automatically.
                 </p>
                 <ul className="list-none space-y-1 mt-2">
-                  <li className="flex items-start gap-2"><span style={{ color: "#34d399" }}>→</span><span>Starter: 48-hour response time.</span></li>
-                  <li className="flex items-start gap-2"><span style={{ color: "#60a5fa" }}>→</span><span>Pro: 24-hour response time.</span></li>
+                  <li className="flex items-start gap-2"><span style={{ color: "#10b981" }}>→</span><span>Starter: 48-hour response time.</span></li>
+                  <li className="flex items-start gap-2"><span style={{ color: "#14b8a6" }}>→</span><span>Pro: 24-hour response time.</span></li>
                 </ul>
               </FeatureBlock>
             </section>

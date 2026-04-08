@@ -24,8 +24,8 @@ interface Props {
 const SEVERITY_ICON: Record<NotifSeverity, React.ReactNode> = {
   critical: <AlertCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />,
   warning:  <AlertTriangleIcon className="w-4 h-4 shrink-0" style={{ color: "#f97316" }} />,
-  info:     <InfoIcon className="w-4 h-4 shrink-0" style={{ color: "#60a5fa" }} />,
-  success:  <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#34d399" }} />,
+  info:     <InfoIcon className="w-4 h-4 shrink-0" style={{ color: "#14b8a6" }} />,
+  success:  <CheckCircleIcon className="w-4 h-4 shrink-0" style={{ color: "#10b981" }} />,
 }
 
 const SEVERITY_BORDER: Record<NotifSeverity, string> = {
@@ -264,7 +264,7 @@ export function NotificationPanel({
             </div>
             {saving && <span className="text-xs" style={{ color: "var(--text-dim)" }}>Saving…</span>}
             {saved && !saving && (
-              <span className="text-xs flex items-center gap-1" style={{ color: "#34d399" }}>
+              <span className="text-xs flex items-center gap-1" style={{ color: "#10b981" }}>
                 <CheckIcon className="w-3 h-3" /> Saved
               </span>
             )}

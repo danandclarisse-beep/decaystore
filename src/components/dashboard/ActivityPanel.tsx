@@ -35,9 +35,9 @@ interface Props {
 
 // ─── Event type metadata ─────────────────────────────────────
 const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  upload:   { label: "Uploaded",         icon: UploadIcon,        color: "#60a5fa" },
-  renewed:  { label: "Renewed",          icon: RefreshCwIcon,     color: "#34d399" },
-  warned:   { label: "Warning sent",     icon: AlertTriangleIcon, color: "#fbbf24" },
+  upload:   { label: "Uploaded",         icon: UploadIcon,        color: "#14b8a6" },
+  renewed:  { label: "Renewed",          icon: RefreshCwIcon,     color: "#10b981" },
+  warned:   { label: "Warning sent",     icon: AlertTriangleIcon, color: "#14b8a6" },
   critical: { label: "Critical warning", icon: ShieldAlertIcon,   color: "#f97316" },
   deleted:  { label: "Auto-deleted",     icon: Trash2Icon,        color: "#f87171" },
   pruned:   { label: "Ghost pruned",     icon: XIcon,             color: "#9ca3af" },
@@ -48,9 +48,9 @@ function getEventMeta(eventType: string) {
 }
 
 function decayColor(score: number) {
-  if (score < 0.25) return "#22c55e"
+  if (score < 0.25) return "#10b981"
   if (score < 0.5)  return "#84cc16"
-  if (score < 0.75) return "#eab308"
+  if (score < 0.75) return "#14b8a6"
   if (score < 0.9)  return "#f97316"
   return "#ef4444"
 }

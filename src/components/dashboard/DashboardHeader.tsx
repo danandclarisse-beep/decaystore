@@ -83,9 +83,9 @@ export function DashboardHeader({
 
   const planBadge = ({
     free:          { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
-    starter:       { bg: "rgba(59,130,246,0.12)",  color: "#60a5fa"           },
-    pro:           { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)"     },
-    trial:         { bg: "rgba(245,166,35,0.12)",  color: "var(--accent)"     },
+    starter:       { bg: "rgba(20,184,166,0.12)",  color: "#14b8a6"           },
+    pro:           { bg: "rgba(20,184,166,0.12)",  color: "var(--accent)"     },
+    trial:         { bg: "rgba(20,184,166,0.12)",  color: "var(--accent)"     },
     trial_expired: { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" },
   } as Record<string, { bg: string; color: string }>)[user?.plan ?? "free"]
     ?? { bg: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }

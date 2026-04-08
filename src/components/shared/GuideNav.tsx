@@ -57,7 +57,7 @@ export function GuideNav() {
                   color:      isActive ? "var(--accent)"     : "var(--text-muted)",
                   background: isActive ? "var(--accent-dim)" : "transparent",
                   fontWeight: isActive ? 600 : 400,
-                  border:     isActive ? "1px solid rgba(245,166,35,0.2)" : "1px solid transparent",
+                  border:     isActive ? "1px solid rgba(20, 184, 166, 0.2)" : "1px solid transparent",
                 }}
               >
                 {label}

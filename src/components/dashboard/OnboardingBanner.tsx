@@ -49,9 +49,9 @@ export function OnboardingBanner() {
           {/* Decay scale visual */}
           <div className="flex items-center gap-2 flex-wrap mb-4">
             {[
-              { label: "Fresh",    color: "#22c55e", desc: "Just uploaded or accessed" },
+              { label: "Fresh",    color: "#10b981", desc: "Just uploaded or accessed" },
               { label: "Aging",    color: "#84cc16", desc: "Starting to decay" },
-              { label: "Stale",    color: "#eab308", desc: "Warning email sent" },
+              { label: "Stale",    color: "#14b8a6", desc: "Warning email sent" },
               { label: "Critical", color: "#f97316", desc: "Final warning" },
               { label: "Expiring", color: "#ef4444", desc: "Deletes very soon" },
             ].map((stage, i) => (
@@ -165,7 +165,7 @@ export function DecayExplainer({ plan }: { plan: string }) {
           <div>
             <div className="relative h-2 rounded-full overflow-hidden mb-1.5">
               <div className="absolute inset-0" style={{
-                background: "linear-gradient(to right, #22c55e 0%, #84cc16 25%, #eab308 50%, #f97316 75%, #ef4444 100%)"
+                background: "linear-gradient(to right, #10b981 0%, #84cc16 25%, #14b8a6 50%, #f97316 75%, #ef4444 100%)"
               }} />
             </div>
             <div className="flex justify-between text-xs" style={{ color: "var(--text-dim)", fontFamily: "DM Mono, monospace" }}>
