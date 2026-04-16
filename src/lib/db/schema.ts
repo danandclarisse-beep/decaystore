@@ -1,3 +1,22 @@
+// FILE: src/lib/db/schema.ts
+//
+// FIXES APPLIED:
+//   [Issue 8 — LOW] waitlist.status is now a pgEnum ("waitlist_status") instead
+//     of a plain text column. Valid values are enforced at the DB level, preventing
+//     silent failures from typos, bad migrations, or direct SQL updates.
+//     The middleware checks entry.status !== "signed_up" — a case mismatch like
+//     "Signed_up" or "SignedUp" would have silently blocked valid users under the
+//     old schema. The enum makes this impossible at the DB layer.
+//
+//     Migration note: Run `ALTER TABLE waitlist DROP COLUMN status` and re-add it
+//     with the enum type, or use Drizzle's migration tooling to generate the DDL.
+//     Existing rows must be updated to match the enum values before the column
+//     type change is applied. Example migration SQL:
+//
+//       CREATE TYPE waitlist_status AS ENUM ('pending','approved','token_expired','signed_up');
+//       ALTER TABLE waitlist ALTER COLUMN status TYPE waitlist_status
+//         USING status::waitlist_status;
+
 import {
   pgTable,
   text,
@@ -20,6 +39,17 @@ export const fileStatusEnum = pgEnum("file_status", [
 
 // [P18] Added 'trial' and 'trial_expired'
 export const planEnum = pgEnum("plan", ["free", "starter", "pro", "trial", "trial_expired"])
+
+// [FIX Issue 8] Promote waitlist status to a pgEnum for DB-level constraint enforcement.
+// Previously this was text("status").notNull().default("pending"), which allowed any
+// arbitrary string to be written to the column. The middleware check
+// (entry.status !== "signed_up") would silently fail for any typo or case mismatch.
+export const waitlistStatusEnum = pgEnum("waitlist_status", [
+  "pending",
+  "approved",
+  "token_expired",
+  "signed_up",
+])
 
 // ─── Users ────────────────────────────────────────────────
 export const users = pgTable("users", {
@@ -128,11 +158,13 @@ export const storageSnapshots = pgTable("storage_snapshots", {
 })
 
 // ─── Waitlist ─────────────────────────────────────────────
-// [P18] Controlled rollout queue. status: pending | approved | token_expired | signed_up
+// [P18] Controlled rollout queue.
+// [FIX Issue 8] status column now uses waitlistStatusEnum for DB-level enforcement.
 export const waitlist = pgTable("waitlist", {
   id:             uuid("id").primaryKey().defaultRandom(),
   email:          text("email").notNull().unique(),
-  status:         text("status").notNull().default("pending"),
+  // [FIX Issue 8] Changed from text("status") to waitlistStatusEnum("status")
+  status:         waitlistStatusEnum("status").notNull().default("pending"),
   token:          text("token").unique(),
   tokenExpiresAt: timestamp("token_expires_at"),
   joinedAt:       timestamp("joined_at").defaultNow().notNull(),

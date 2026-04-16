@@ -1,11 +1,24 @@
-"use client"
-
-// PAGE: /admin/waitlist
-// FILE: src/app/admin/waitlist/page.tsx
+// ROUTE: /admin/waitlist
+// FILE:  src/app/admin/waitlist/page.tsx
 //
-// Requires ADMIN_SECRET to be entered in-browser (stored in sessionStorage).
-// Calls /api/admin/waitlist to list entries and /api/admin/waitlist/approve to approve batches.
-// No Clerk session needed — purely secret-gated.
+// FIXES APPLIED:
+//   [Issue 10 — LOW] Admin secret is no longer persisted in sessionStorage.
+//     Previously: sessionStorage.setItem("ds_admin_secret", inputSecret)
+//     sessionStorage is readable by any JavaScript on the same origin, including
+//     browser extensions with broad permissions and any XSS vector. An attacker
+//     with XSS access could exfiltrate the admin secret trivially.
+//
+//     Fix: the secret is now held only in React state (in-memory) for the
+//     duration of the browser session. It is never written to sessionStorage,
+//     localStorage, or any persistent client-side store.
+//
+//     Trade-off: the admin must re-enter the secret on each page load / refresh.
+//     For an internal admin panel accessed infrequently, this is the right
+//     security/UX balance. A proper solution would be a server-side HttpOnly
+//     session cookie, but that requires a server-side session endpoint which is
+//     outside the scope of this fix pass.
+
+"use client"
 
 import { useState, useEffect, useCallback } from "react"
 
@@ -34,6 +47,9 @@ function fmt(iso: string | null) {
 }
 
 export default function AdminWaitlistPage() {
+  // [FIX Issue 10] Secret is held in React state only — never written to
+  // sessionStorage, localStorage, or any persistent client-side store.
+  // This eliminates the XSS exfiltration vector while keeping the UX simple.
   const [secret, setSecret]           = useState("")
   const [inputSecret, setInputSecret] = useState("")
   const [entries, setEntries]         = useState<WaitlistEntry[]>([])
@@ -44,13 +60,9 @@ export default function AdminWaitlistPage() {
   const [approveResult, setApproveResult] = useState<string | null>(null)
   const [filter, setFilter]           = useState<"all" | "pending" | "approved" | "token_expired" | "signed_up">("all")
 
-  // Restore secret from sessionStorage on load
-  useEffect(() => {
-    const saved = typeof window !== "undefined"
-      ? sessionStorage.getItem("ds_admin_secret") ?? ""
-      : ""
-    setSecret(saved)
-  }, [])
+  // [FIX Issue 10] Removed the useEffect that restored from sessionStorage.
+  // The admin will need to re-enter the secret on each page load. This is
+  // intentional — see file header for rationale.
 
   const fetchEntries = useCallback(async (s: string) => {
     if (!s) return
@@ -77,8 +89,14 @@ export default function AdminWaitlistPage() {
   }, [secret, fetchEntries])
 
   function login() {
-    sessionStorage.setItem("ds_admin_secret", inputSecret)
+    // [FIX Issue 10] Only update React state — no sessionStorage write.
     setSecret(inputSecret)
+  }
+
+  function logout() {
+    // [FIX Issue 10] Clear React state only — nothing to remove from sessionStorage.
+    setSecret("")
+    setEntries([])
   }
 
   async function approve() {
@@ -174,8 +192,9 @@ export default function AdminWaitlistPage() {
           >
             {loading ? "Refreshing…" : "↻ Refresh"}
           </button>
+          {/* [FIX Issue 10] logout() clears React state only */}
           <button
-            onClick={() => { sessionStorage.removeItem("ds_admin_secret"); setSecret(""); setEntries([]) }}
+            onClick={logout}
             className="px-4 py-2 rounded-lg border text-sm"
             style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
           >
